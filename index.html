@@ -1,0 +1,3457 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Woneco</title>
+<style>
+/* Woneco design tokens. Values mirror BRAND.palette in js/brand.js. */
+:root {
+  --green-900: #1F4128;
+  --green-600: #2E5D3A;
+  --green-100: #E8F0EA;
+  --accent: #F2B705;
+  --ink: #1A1A1A;
+  --surface: #FFFFFF;
+
+  --font-base: 20px;   /* Report 6's validated default text size */
+  --tap-min: 48px;
+  --radius: 14px;
+  --gap: 16px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: var(--font-base);
+  line-height: 1.5;
+  color: var(--ink);
+  background: #d8dcd9;
+  min-height: 100vh;
+}
+
+#phone {
+  /* Positioned so the drawer and the tour overlay (#nav, .tour-*) anchor to
+     the phone rather than to the viewport once the shell offsets it. */
+  position: relative;
+  width: 390px;
+  height: 844px;
+  background: var(--surface);
+  border-radius: 36px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .28);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 480px) {
+  body { background: var(--surface); }
+  #phone { width: 100vw; height: 100dvh; border-radius: 0; box-shadow: none; }
+}
+
+#screen { flex: 1; overflow-y: auto; padding: var(--gap); }
+
+#boot-status {
+  color: var(--green-900);
+  background: var(--green-100);
+  border-radius: var(--radius);
+  padding: var(--gap);
+}
+
+#boot-status h1 { margin: 0 0 .1em; font-size: 30px; }
+#boot-status .tagline { margin: 0 0 1em; font-size: 17px; }
+
+.figure { font-size: 34px; font-weight: 700; color: var(--green-900); }
+.stage { display: inline-block; background: var(--accent); color: var(--ink);
+         border-radius: 999px; padding: 2px 12px; font-size: 16px; font-weight: 600; }
+
+.withheld { border-left: 4px solid var(--accent); padding-left: 12px; margin: 1em 0; font-size: 17px; }
+
+.illustrative { font-size: 14px; color: #4a5a50; margin-top: 1.2em; }
+
+.tree { display: block; width: 150px; height: 156px; margin: 4px auto 8px; }
+
+/* --- Onboarding (Watt's introduction) --- */
+.onboarding { display: flex; flex-direction: column; min-height: 100%; }
+.progress { margin-bottom: 8px; }
+.dots { display: flex; gap: 6px; justify-content: center; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #cdd8d0; }
+.dot.on { background: var(--green-600); }
+.step-count { text-align: center; font-size: 14px; color: #4a5a50; margin: 6px 0 0; }
+
+.watt { display: flex; justify-content: center; margin: 10px 0 4px; }
+.watt .watt-figure { width: 76px; height: 103px; }
+.watt-inline { display: flex; align-items: center; gap: 12px; }
+.watt-inline .watt-figure { width: 44px; height: 60px; }
+.watt-inline p { margin: 0; font-size: 16px; }
+.onboarding h2 { color: var(--green-900); font-size: 26px; margin: 0 0 .3em; }
+.onboarding .body { margin: 0 0 1em; }
+
+.consent { background: var(--green-100); border-radius: var(--radius); padding: 12px; }
+.consent-row { display: flex; gap: 12px; align-items: flex-start;
+               min-height: var(--tap-min); padding: 6px 0; font-size: 18px; cursor: pointer; }
+.consent-row input { width: 26px; height: 26px; margin-top: 4px; accent-color: var(--green-600); flex: none; }
+.reassure { font-size: 15px; color: #3c4d43; margin: 8px 0 0; }
+
+.field { display: flex; justify-content: space-between; align-items: center;
+         gap: 12px; min-height: var(--tap-min); font-size: 18px; }
+.field select { font-size: 18px; padding: 8px; border-radius: 8px;
+                border: 2px solid var(--green-600); background: var(--surface); }
+
+.actions { display: flex; gap: 10px; margin-top: auto; padding-top: 20px; }
+.btn { flex: 1; min-height: var(--tap-min); font-size: 19px; font-weight: 600;
+       color: var(--surface); background: var(--green-600); border: none;
+       border-radius: var(--radius); cursor: pointer; padding: 12px; }
+.btn.ghost { background: transparent; color: var(--green-900); border: 2px solid var(--green-600); }
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* --- Tab bar --- */
+.tabbar { display: flex; border-top: 1px solid #d3ddd6; background: var(--surface); }
+.tab { flex: 1; min-height: 62px; border: none; background: none; cursor: pointer;
+       display: flex; flex-direction: column; align-items: center; justify-content: center;
+       gap: 2px; padding: 6px 2px; color: #4a5a50; }
+.tab-icon { font-size: 21px; line-height: 1; }
+.tab-label { font-size: 12px; font-weight: 600; }
+.tab.active { color: var(--green-900); box-shadow: inset 0 3px 0 var(--green-600); }
+.tab:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+
+/* --- Cards and stats --- */
+.card { background: var(--green-100); border-radius: var(--radius); padding: 14px; margin: 12px 0; }
+.card.warn { background: #FDF3D7; border-left: 4px solid var(--accent); }
+.card h3 { margin: 0 0 .4em; font-size: 19px; color: var(--green-900); }
+.card h4 { margin: .9em 0 .2em; font-size: 16px; color: var(--green-900); }
+.stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 5px 0; }
+.stat-label { flex: 1; font-size: 17px; }
+.stat-value { font-weight: 700; font-size: 21px; color: var(--green-900); }
+.stat-hint { flex-basis: 100%; font-size: 14px; color: #4a5a50; }
+.note { font-size: 15px; color: #3c4d43; margin: .5em 0 0; }
+
+/* --- Progress bar --- */
+.bar { height: 12px; border-radius: 999px; background: #cdd8d0; overflow: hidden; margin-top: 6px; }
+.bar-fill { height: 100%; background: var(--green-600); }
+.bar-caption { font-size: 16px; margin: 6px 0 0; }
+
+/* --- Chart --- */
+.chart { margin: 0; }
+.chart svg { width: 100%; height: auto; }
+.legend { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #3c4d43; flex-wrap: wrap; }
+.key { width: 16px; height: 0; border-top: 2.5px solid var(--green-900); display: inline-block; }
+.key.dashed { border-top: 2px dashed var(--green-600); }
+
+/* --- Badges, tips, help --- */
+.badge { display: inline-block; font-size: 13px; font-weight: 700; border-radius: 999px;
+         padding: 3px 10px; margin: 6px 0 0; }
+.badge.meter { background: var(--green-600); color: #fff; }
+.badge.self { background: var(--accent); color: var(--ink); }
+.tip-euro { font-size: 22px; font-weight: 700; color: var(--green-900); margin: 0 0 .2em; }
+.help { border-top: 1px solid #cbd8ce; padding: 8px 0; }
+.help summary { cursor: pointer; min-height: 32px; font-size: 17px; }
+
+/* --- Header and hamburger --- */
+#header { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+          border-bottom: 1px solid #d3ddd6; background: var(--surface); flex: none; }
+.header-title { font-size: 19px; font-weight: 700; color: var(--green-900); }
+.menu-button { width: var(--tap-min); height: var(--tap-min); border: none; background: none;
+               cursor: pointer; display: flex; flex-direction: column; justify-content: center;
+               gap: 5px; padding: 0 10px; }
+.menu-button span { display: block; height: 3px; border-radius: 2px; background: var(--green-900); }
+.menu-button:focus-visible { outline: 3px solid var(--accent); }
+
+/* --- Left drawer --- */
+#nav { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
+#nav:empty { display: none; }
+.drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.35); pointer-events: auto; }
+.drawer { position: absolute; top: 0; left: 0; bottom: 0; width: 74%; background: var(--surface);
+          box-shadow: 4px 0 24px rgba(0,0,0,.25); padding: 56px 0 12px; pointer-events: auto;
+          display: flex; flex-direction: column; }
+.drawer-close { position: absolute; top: 8px; right: 8px; width: var(--tap-min); height: var(--tap-min);
+                border: none; background: none; font-size: 30px; line-height: 1; cursor: pointer;
+                color: var(--green-900); }
+.drawer-item { display: flex; align-items: center; gap: 14px; min-height: var(--tap-min);
+               border: none; background: none; width: 100%; padding: 12px 18px; cursor: pointer;
+               font-size: 19px; text-align: left; color: var(--ink); }
+.drawer-item.active { background: var(--green-100); color: var(--green-900); font-weight: 700;
+                      box-shadow: inset 4px 0 0 var(--green-600); }
+.drawer-icon { font-size: 22px; }
+
+/* --- Dashboard figures --- */
+.tree-name { text-align: center; font-size: 18px; font-weight: 700; color: var(--green-900);
+             margin: -4px 0 6px; }
+.figure-units { text-align: center; font-size: 15px; color: #4a5a50; margin: -6px 0 10px; }
+.figure { text-align: center; }
+.stage { display: block; width: fit-content; margin: 0 auto; }
+
+/* --- Combined tip / notification card --- */
+.tip-card { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left;
+            background: var(--green-100); border: none; border-left: 4px solid var(--accent);
+            border-radius: var(--radius); padding: 12px 14px; margin: 14px 0; cursor: pointer;
+            min-height: var(--tap-min); font: inherit; color: var(--ink); }
+.tip-kicker { font-size: 13px; font-weight: 700; text-transform: uppercase;
+              letter-spacing: .04em; color: #4a5a50; }
+.tip-title { font-size: 18px; font-weight: 600; color: var(--green-900); }
+.tip-points { font-size: 15px; font-weight: 700; color: var(--green-600); }
+
+/* --- Guided tour --- */
+.tour-layer { position: absolute; inset: 0; z-index: 60; }
+.tour-dim { position: absolute; inset: 0; background: rgba(20,32,24,.45); }
+.tour-ring { position: absolute; border: 3px solid var(--accent); border-radius: 12px;
+             box-shadow: 0 0 0 9999px rgba(20,32,24,.45); pointer-events: none; }
+.tour-bubble { position: absolute; right: 12px; display: flex; gap: 8px; align-items: flex-end; }
+.watt-figure { width: 62px; height: 84px; flex: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.3)); }
+.tour-speech { position: relative; background: var(--surface); border-radius: 16px;
+               padding: 14px 16px 10px; box-shadow: 0 8px 26px rgba(0,0,0,.3); flex: 1; }
+.tour-speech::after { content: ''; position: absolute; left: -9px; bottom: 22px;
+                      border: 9px solid transparent; border-right-color: var(--surface); }
+.tour-title { margin: 0 0 .25em; font-size: 18px; font-weight: 700; color: var(--green-900); }
+.tour-body { margin: 0 0 .7em; font-size: 16px; line-height: 1.45; }
+.tour-actions { display: flex; }
+.tour-actions .btn { min-height: 42px; font-size: 17px; }
+.tour-skip { display: block; margin: 8px auto 0; border: none; background: none; cursor: pointer;
+             font-size: 14px; color: #4a5a50; text-decoration: underline; }
+.tour-counter { margin: 2px 0 0; text-align: center; font-size: 13px; color: #6b7a70; }
+
+/* --- Name and season chips --- */
+.name-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.chip { min-height: 42px; padding: 8px 16px; border-radius: 999px; cursor: pointer;
+        border: 2px solid var(--green-600); background: var(--surface);
+        color: var(--green-900); font-size: 17px; font-weight: 600; }
+.chip.on { background: var(--green-600); color: #fff; }
+.field input[type="text"] { font-size: 18px; padding: 8px 10px; border-radius: 8px;
+        border: 2px solid var(--green-600); width: 55%; }
+.tree-thirsty, .tree-wilting { transition: none; }
+
+/* --- Registration, login and the demo-only role selector --- */
+.access { display: flex; flex-direction: column; min-height: 100%; }
+.access h2 { color: var(--green-900); font-size: 26px; margin: 0 0 .3em; }
+.access .body { margin: 0 0 1em; }
+.field.stacked { flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 12px; }
+.field.stacked input { font-size: 18px; padding: 10px; border-radius: 8px;
+                       border: 2px solid var(--green-600); background: var(--surface); }
+
+/* Anything that exists only because this is a demonstrator says so, loudly. */
+.demo-only { border-left: 4px solid #b4711a; background: #fdf6e7; padding: 10px 12px;
+             border-radius: 8px; font-size: 15px; color: #5a4413; margin: 0 0 14px; }
+
+.role { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+        min-height: var(--tap-min); padding: 14px; margin-bottom: 10px; cursor: pointer;
+        background: var(--green-100); border: 2px solid transparent; border-radius: var(--radius); }
+.role:hover, .role:focus-visible { border-color: var(--green-600); outline: none; }
+.role-glyph { font-size: 30px; line-height: 1; }
+.role-text { display: flex; flex-direction: column; gap: 2px; }
+.role-text strong { color: var(--green-900); font-size: 19px; }
+.role-text span { font-size: 15px; color: #3c4d43; }
+
+/* --- Notification and tip history --- */
+.notices { list-style: none; margin: 0; padding: 0; }
+.notice { display: flex; flex-direction: column; gap: 2px; padding: 10px 0;
+          border-bottom: 1px solid #d3ddd6; }
+.notice:last-child { border-bottom: none; }
+.notice-date { font-size: 13px; color: #4a5a50; }
+.notice-body { font-size: 17px; }
+.notice.good .notice-body { color: var(--green-900); font-weight: 600; }
+.notice-tip { font-size: 15px; color: #3c4d43; }
+
+/* Larger text, from Settings. Report 6 validated 20px as the default. */
+#phone[data-large="true"] { --font-base: 23px; font-size: 23px; }
+
+/* Layout: the phone, centred. */
+#stage { min-height: 100vh; display: flex; flex-direction: column;
+         align-items: center; justify-content: center; gap: 16px; padding: 20px; }
+
+#phone { max-height: min(844px, calc(100vh - 160px)); }
+
+@media (max-width: 480px) {
+  #stage { padding: 0; gap: 0; justify-content: flex-start; }
+  /* On a real phone there is no desk to leave room for. The clamp above is
+     for the framed preview on a laptop, and would otherwise leave a dead
+     strip below the app on the device it is actually designed for. */
+  #phone { max-height: none; }
+}
+
+/* NL/EN in the header: reachable from the very first screen, before the
+   Profile screen that carries the other toggle even exists. */
+.lang-switch { margin-left: auto; display: flex; gap: 4px; flex: none; }
+.lang-switch .chip { min-height: 34px; padding: 4px 10px; font-size: 14px; font-weight: 700; }
+.header-title.brand { font-size: 21px; }
+
+/* The first question: which language. Each option is written in its own
+   language, so neither depends on already understanding the other. */
+.lang-choice { display: flex; flex-direction: column; gap: 12px; }
+.lang-option { display: flex; flex-direction: column; gap: 2px; text-align: left;
+               min-height: 64px; padding: 14px 16px; cursor: pointer;
+               background: var(--green-100); border: 2px solid transparent;
+               border-radius: var(--radius); color: var(--ink); }
+.lang-option strong { font-size: 21px; color: var(--green-900); }
+.lang-option span { font-size: 15px; color: #3c4d43; }
+.lang-option.on { border-color: var(--green-600); background: var(--surface); }
+.lang-option.on strong::after { content: " \2713"; color: var(--green-600); }
+.lang-option:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* --- The growth ladder: every stage of the tree at once --- */
+.ladder { list-style: none; margin: 0; padding: 0; }
+.rung { display: flex; align-items: center; gap: 14px; padding: 10px 12px; margin-bottom: 8px;
+        border-radius: var(--radius); background: var(--green-100); border: 2px solid transparent; }
+/* Unreached stages stay visible but drained: hiding them would remove the
+   whole point of showing the ladder. */
+.rung:not(.reached) { opacity: .45; filter: grayscale(1); background: #eef1ef; }
+.rung.current { border-color: var(--green-600); background: var(--surface); }
+.rung .tree { width: 76px; height: 79px; margin: 0; flex: none; }
+.rung-text { display: flex; flex-direction: column; gap: 2px; }
+.rung-text strong { font-size: 18px; color: var(--green-900); }
+.rung-status { font-size: 14px; color: #3c4d43; }
+.rung.current .rung-status { color: var(--green-600); font-weight: 700; }
+
+/* The level chip on the home screen opens the ladder, so it is a button. */
+button.stage { border: none; font-family: inherit; }
+button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset: 2px; }
+
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="phone">
+    <header id="header"></header>
+    <main id="screen"><div id="boot-status">Laden&hellip;</div></main>
+    <div id="nav"></div>
+  </div>
+</div>
+<script type="module">
+// ---- js/brand.js ----
+/**
+ * Brand identity for the Energieverdienspel tenant app.
+ *
+ * This is the ONLY place the product name, assistant and palette are defined.
+ * Handover decision D9 requires name and mascot to be settled before the UI is
+ * built and easy to change afterwards. To rebrand: edit this file only.
+ */
+const BRAND = Object.freeze({
+  name: 'Woneco',
+
+  tagline: Object.freeze({
+    nl: 'Bespaar zonder in de kou te zitten',
+    en: 'Save without going cold',
+  }),
+
+  assistant: Object.freeze({
+    name: 'Watt',
+    glyph: '\u{1F50B}', // battery
+  }),
+
+  // 'tree' selects the 6-stage growing tree in js/ui/tree.js (Plan B).
+  mascot: 'tree',
+
+  palette: Object.freeze({
+    green900: '#1F4128',
+    green600: '#2E5D3A',
+    green100: '#E8F0EA',
+    accent: '#F2B705',
+    ink: '#1A1A1A',
+    surface: '#FFFFFF',
+  }),
+});
+
+// ---- js/i18n.js ----
+/**
+ * Dutch first, English second.
+ *
+ * Dutch is the product language: the users are Heerlen-Noord tenants and the
+ * handover requires the consent flow in plain Dutch. English exists so DACS
+ * and examiners can read the app, not because tenants need it.
+ *
+ * Copy targets roughly B1 Dutch - short sentences, no jargon, no compound
+ * nouns where a plain word will do.
+ */
+const LANGUAGES = Object.freeze(['nl', 'en']);
+const DEFAULT_LANGUAGE = 'nl';
+
+/**
+ * Picks one of two literals by language.
+ *
+ * Most screen copy is written inline rather than through t(), because a wall
+ * of keys is harder to review than the sentence itself. This helper is the one
+ * shared way to do that, so the same arrow is not redefined in every screen
+ * module - which also collided in the single-file bundle.
+ */
+function say(nl, en, lang) {
+  return lang === 'en' ? en : nl;
+}
+
+const STRINGS = Object.freeze({
+  'nav.home': { nl: 'Start', en: 'Home' },
+  'nav.savings': { nl: 'Besparing', en: 'Savings' },
+  'nav.challenges': { nl: 'Uitdagingen', en: 'Challenges' },
+  'nav.tips': { nl: 'Tips', en: 'Tips' },
+  'nav.profile': { nl: 'Profiel', en: 'Profile' },
+
+  'home.saved': { nl: 'Zo ver ben je', en: 'Your progress' },
+  'home.level': { nl: 'Niveau', en: 'Level' },
+  'home.toNext': { nl: 'Nog {amount} tot het volgende niveau.',
+                   en: '{amount} to go until the next level.' },
+  'home.streak': { nl: '{days} dagen op rij', en: '{days} days in a row' },
+
+  'comfort.title': { nl: 'Warmte telt niet als besparing',
+                     en: 'Warmth does not count as saving' },
+  'comfort.body': {
+    nl: 'Je gebruikte {raw} minder dan verwacht, maar {withheld} daarvan telt niet mee. Op {days} van de {total} dagen stookte je minder dan gezond is. Warmte is niets om op te besparen.',
+    en: 'You used {raw} less than expected, but {withheld} of that does not count. On {days} of {total} days you heated less than is healthy. Warmth is not something to save on.',
+  },
+
+  'data.lag': { nl: 'Laatste meting {date} — gegevens lopen een dag achter.',
+                en: 'Last reading {date} — data runs one day behind.' },
+  'data.illustrative': {
+    nl: 'Alle bedragen zijn voorbeeldwaarden; er is nog geen echte P4-data.',
+    en: 'All amounts are example values; there is no real P4 data yet.',
+  },
+
+  'error.boot': { nl: 'Opstartfout: {message}', en: 'Startup error: {message}' },
+});
+
+/**
+ * Looks up a key and fills {placeholders}.
+ * An unknown key returns the key itself rather than throwing, so a missing
+ * string is visible in the UI instead of blanking a screen.
+ */
+function t(key, lang = DEFAULT_LANGUAGE, vars = {}) {
+  const entry = STRINGS[key];
+  if (!entry) return key;
+  const template = entry[lang] ?? entry[DEFAULT_LANGUAGE];
+  return template.replace(/\{(\w+)\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+  );
+}
+
+/** Every key defined, for completeness checks. */
+function keys() {
+  return Object.keys(STRINGS);
+}
+
+// ---- js/data/dates.js ----
+/**
+ * ISO date helpers. All arithmetic is done in UTC so results never shift
+ * across a daylight-saving transition.
+ */
+
+const MS_PER_DAY = 86_400_000;
+
+function toUtc(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+function toIso(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Returns isoDate shifted by n days. n may be negative. */
+function addDays(isoDate, n) {
+  return toIso(toUtc(isoDate) + n * MS_PER_DAY);
+}
+
+/** Returns the 1-based day of the year (1..366). */
+function dayOfYear(isoDate) {
+  const year = Number(isoDate.slice(0, 4));
+  return Math.round((toUtc(isoDate) - Date.UTC(year, 0, 1)) / MS_PER_DAY) + 1;
+}
+
+/** Returns `count` ascending ISO dates ending at (and including) isoEndDate. */
+function datesEndingAt(isoEndDate, count) {
+  const end = toUtc(isoEndDate);
+  return Array.from({ length: count }, (_, i) =>
+    toIso(end - (count - 1 - i) * MS_PER_DAY)
+  );
+}
+
+// ---- js/data/household.js ----
+/**
+ * Deterministic simulated household data.
+ *
+ * NOT real data. No live P4 access exists (handover Step 1: ODA registration
+ * and DPIA are both outstanding). Everything here is generated from a seeded
+ * PRNG so that every demo run is byte-identical.
+ *
+ * The series is generated from the same heating-slope form that
+ * js/engine/model.js later fits. That makes the demonstrator internally
+ * coherent; it does NOT validate the model. See "Over deze cijfers".
+ */
+
+
+/** Fixed demo date: mid heating season, so the heating slope is visible. */
+const DEMO_TODAY = '2026-02-15';
+const HISTORY_DAYS = 90;
+
+const HOUSEHOLD = Object.freeze({
+  occupants: 1,
+  ageBand: '60+',
+  floorAreaM2: 70,
+  energyLabel: 'E',
+  district: 'Heerlen-Noord',
+});
+
+// Underlying energy signature used to synthesise the series.
+const GAS_BASELOAD_M3 = 0.35;   // hot water and cooking
+const GAS_SLOPE_M3_PER_HDD = 0.22;
+const ELEC_BASELOAD_KWH = 4.2;
+const ELEC_SLOPE_KWH_PER_DARK_HOUR = 0.15;
+const BALANCE_POINT_C = 15.5;
+
+/**
+ * How much the household improves across the whole 90 days.
+ *
+ * Deliberately small. Report 4 puts the realistic annual behavioural saving at
+ * roughly EUR 44, and the handover's rule is that no figure the app shows may
+ * imply more than the true ceiling. A generous improvement factor produces a
+ * demo that saves several hundred euros a year, which is exactly the over-claim
+ * the handover condemns. Guarded by the annualised-ceiling integration test.
+ */
+const IMPROVEMENT_OVER_PERIOD = 0.02;
+
+// The under-consumption stretch, as indices into the 90-day series.
+const UNDERHEAT_START = 55;
+const UNDERHEAT_END = 70;
+const UNDERHEAT_FACTOR = 0.70; // 30% below expected: below the 0.80 comfort floor
+
+/**
+ * Three households a presenter can switch between.
+ *
+ * Two mechanisms in this design are load-bearing and were invisible in the
+ * demo, because the only simulated household saved steadily and so always had
+ * a healthy tree:
+ *
+ *  - `slipping` uses MORE than expected for a fortnight, which is the only
+ *    thing that makes a tree wilt. Its level does not drop: growth is
+ *    permanent, health is temporary.
+ *  - `hardship` heats far below what the weather implies. It shows the comfort
+ *    floor withholding credit, and its tree stays healthy - a household in
+ *    hardship must never be handed a dying tree on top of a cold house.
+ *
+ * All three share one seed, so the weather is identical across them and what
+ * differs on screen is behaviour rather than luck.
+ */
+const HOUSEHOLD_PROFILES = Object.freeze([
+  Object.freeze({
+    id: 'saver', improvement: IMPROVEMENT_OVER_PERIOD,
+    underheat: Object.freeze({ start: UNDERHEAT_START, end: UNDERHEAT_END, factor: UNDERHEAT_FACTOR }),
+    drift: null,
+    nl: Object.freeze({ title: 'Bespaart', hint: 'Gestaag beter dan verwacht.' }),
+    en: Object.freeze({ title: 'Saving', hint: 'Steadily better than expected.' }),
+  }),
+  Object.freeze({
+    id: 'slipping', improvement: 0,
+    underheat: null,
+    // The last fortnight above expectation - the only route to a wilting tree.
+    drift: Object.freeze({ days: 14, factor: 1.2 }),
+    nl: Object.freeze({ title: 'Zakt terug', hint: 'Twee weken meer dan verwacht: de boom hangt.' }),
+    en: Object.freeze({ title: 'Slipping', hint: 'A fortnight above expectation: the tree droops.' }),
+  }),
+  Object.freeze({
+    id: 'hardship', improvement: 0.01,
+    underheat: Object.freeze({ start: 40, end: HISTORY_DAYS, factor: 0.62 }),
+    drift: null,
+    nl: Object.freeze({ title: 'Stookt te weinig', hint: 'Onder de comfortgrens. Er wordt niets bijgeschreven.' }),
+    en: Object.freeze({ title: 'Under-heating', hint: 'Below the comfort floor. Nothing is credited.' }),
+  }),
+]);
+
+const DEFAULT_PROFILE = 'saver';
+
+/** A profile by id. An unknown id falls back rather than breaking a demo. */
+function profileById(id) {
+  return HOUSEHOLD_PROFILES.find((p) => p.id === id) ?? HOUSEHOLD_PROFILES[0];
+}
+
+/** mulberry32 - small, fast, fully deterministic PRNG. */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const round2 = (x) => Math.round(x * 100) / 100;
+
+/** Seasonal mean temperature for Heerlen, degrees Celsius. */
+function seasonalTempC(isoDate) {
+  const doy = dayOfYear(isoDate);
+  return 9.5 - 7.5 * Math.cos((2 * Math.PI * (doy - 15)) / 365);
+}
+
+/** Daylight hours at latitude ~50.9 N. */
+function daylightHours(isoDate) {
+  const doy = dayOfYear(isoDate);
+  return 12.3 - 4.3 * Math.cos((2 * Math.PI * (doy + 10)) / 365);
+}
+
+/** The most recent reading available: always the day before DEMO_TODAY. */
+function lastReadingDate() {
+  return addDays(DEMO_TODAY, -1);
+}
+
+/**
+ * Returns HISTORY_DAYS ascending readings ending at lastReadingDate().
+ *
+ * Deterministic: same output on every call and every machine. The default
+ * profile reproduces exactly what this function returned before profiles
+ * existed, so every figure in the tests and in the demo is unchanged.
+ */
+function generateHistory(profileId = DEFAULT_PROFILE) {
+  const profile = profileById(profileId);
+  const rand = mulberry32(20260215);
+  const dates = datesEndingAt(lastReadingDate(), HISTORY_DAYS);
+  const driftFrom = profile.drift ? HISTORY_DAYS - profile.drift.days : HISTORY_DAYS;
+
+  return dates.map((date, i) => {
+    const tempAvgC = seasonalTempC(date) + (rand() - 0.5) * 5;
+    const daylight = daylightHours(date);
+    const hdd = Math.max(0, BALANCE_POINT_C - tempAvgC);
+    const darkHours = Math.max(0, 12 - daylight);
+
+    const expectedGas = GAS_BASELOAD_M3 + GAS_SLOPE_M3_PER_HDD * hdd;
+    const expectedElec = ELEC_BASELOAD_KWH + ELEC_SLOPE_KWH_PER_DARK_HOUR * darkHours;
+
+    // Behaviour: the household gradually improves over the 90 days.
+    const improvement = 1 - profile.improvement * (i / HISTORY_DAYS);
+
+    // A deliberate stretch of under-heating, so the comfort floor can be shown.
+    const underheating = profile.underheat
+      && i >= profile.underheat.start && i < profile.underheat.end
+      ? profile.underheat.factor : 1;
+
+    // A late stretch ABOVE expectation - the only thing that wilts a tree.
+    const drift = i >= driftFrom ? profile.drift.factor : 1;
+
+    const gas = expectedGas * improvement * underheating * drift * (0.92 + rand() * 0.16);
+    const elec = expectedElec * improvement * (0.94 + rand() * 0.12);
+
+    return {
+      date,
+      gas_m3: round2(Math.max(0, gas)),
+      elec_kwh: round2(Math.max(0, elec)),
+      temp_avg_c: round2(tempAvgC),
+      daylight_hours: round2(daylight),
+    };
+  });
+}
+
+// ---- js/engine/model.js ----
+/**
+ * Expected-consumption model: an interpretable energy signature.
+ *
+ *   expected_gas(d)  = baseload + slope x heating-degree-days(d)
+ *   expected_elec(d) = baseload + slope x darkness hours(d)
+ *
+ * Fitted by ordinary least squares - the same approach used in the
+ * "Op koers?" dashboard, for consistency across the two halves of the project.
+ *
+ * Structure follows Grillone et al. (2021), the change-point / heating-slope
+ * design Report 3 actually describes. The handover corrects Report 3's citation
+ * of Wang, Sun & Lall (2017), which is a monthly, state-level, cooling-only
+ * model and is not a structural template.
+ *
+ * This is a documented STAND-IN for the hierarchical Bayesian model, not a
+ * trained Bayesian model, and must be labelled as such wherever it surfaces.
+ */
+
+/** Balance-point temperature for Dutch dwellings (assumption A5). */
+const T_BASE_C = 15.5;
+
+/** 95% interval multiplier. */
+const CONFIDENCE_Z = 1.96;
+
+/** Above this band-width-to-prediction ratio the app shows no advice. */
+const MAX_BAND_RATIO = 0.40;
+
+/**
+ * Days used to learn the household's signature before any saving is measured.
+ *
+ * The model MUST NOT be fitted to the same days it is then measured against:
+ * ordinary least squares drives the residuals to sum to zero, so the honest
+ * net saving over the fitted window is exactly EUR 0,00 by construction, while
+ * the daily-floored credited figure still accumulates the positive half of the
+ * noise. That would grow the tree for a household that saved nothing.
+ *
+ * Fitting a baseline period and reporting on the days after it is the standard
+ * measurement-and-verification split, and it is what the handover means when
+ * it says the savings claim needs "a proper baseline" (Report 2).
+ */
+const BASELINE_DAYS = 45;
+
+/** Heating-degree-days for one day. */
+function hdd(tempAvgC, tBase = T_BASE_C) {
+  return Math.max(0, tBase - tempAvgC);
+}
+
+/** Hours of darkness beyond a nominal 12-hour day. */
+function darknessHours(daylight) {
+  return Math.max(0, 12 - daylight);
+}
+
+/** Ordinary least squares for y = intercept + slope * x. */
+function fitLinear(xs, ys) {
+  const n = xs.length;
+  if (n < 3) throw new Error(`fitLinear needs at least 3 points, got ${n}`);
+
+  const meanX = xs.reduce((s, x) => s + x, 0) / n;
+  const meanY = ys.reduce((s, y) => s + y, 0) / n;
+
+  let sxy = 0;
+  let sxx = 0;
+  for (let i = 0; i < n; i += 1) {
+    sxy += (xs[i] - meanX) * (ys[i] - meanY);
+    sxx += (xs[i] - meanX) ** 2;
+  }
+
+  const slope = sxx === 0 ? 0 : sxy / sxx;
+  const intercept = meanY - slope * meanX;
+
+  let sse = 0;
+  for (let i = 0; i < n; i += 1) {
+    sse += (ys[i] - (intercept + slope * xs[i])) ** 2;
+  }
+  const residualSd = Math.sqrt(sse / (n - 2));
+
+  return { intercept, slope, residualSd, n };
+}
+
+/** Fits both fuel signatures from a reading history. */
+function fitModel(readings) {
+  return {
+    gas: fitLinear(readings.map((r) => hdd(r.temp_avg_c)), readings.map((r) => r.gas_m3)),
+    elec: fitLinear(
+      readings.map((r) => darknessHours(r.daylight_hours)),
+      readings.map((r) => r.elec_kwh)
+    ),
+  };
+}
+
+/**
+ * Splits a history into the baseline window the model learns from and the
+ * report window over which savings are actually measured.
+ */
+function splitBaseline(readings, baselineDays = BASELINE_DAYS) {
+  if (readings.length <= baselineDays) {
+    throw new Error(
+      `splitBaseline: need more than ${baselineDays} readings, got ${readings.length}`
+    );
+  }
+  return {
+    baseline: readings.slice(0, baselineDays),
+    report: readings.slice(baselineDays),
+  };
+}
+
+function predict(fit, x) {
+  const point = Math.max(0, fit.intercept + fit.slope * x);
+  const half = CONFIDENCE_Z * fit.residualSd;
+  return { point, band: [Math.max(0, point - half), point + half] };
+}
+
+/** Expected consumption plus uncertainty band for one day's conditions. */
+function expectedFor(model, reading) {
+  const gas = predict(model.gas, hdd(reading.temp_avg_c));
+  const elec = predict(model.elec, darknessHours(reading.daylight_hours));
+  return {
+    gas_m3: gas.point,
+    elec_kwh: elec.point,
+    gasBand: gas.band,
+    elecBand: elec.band,
+  };
+}
+
+/**
+ * True when the band is tight enough for advice to be meaningful.
+ * The handover requires a confidence cut-off below which the app shows
+ * no advice rather than guessing.
+ */
+function isConfident(model, expected) {
+  const ratio = (fit, point) =>
+    point <= 0 ? Infinity : (2 * CONFIDENCE_Z * fit.residualSd) / point;
+  return (
+    ratio(model.gas, expected.gas_m3) <= MAX_BAND_RATIO &&
+    ratio(model.elec, expected.elec_kwh) <= MAX_BAND_RATIO
+  );
+}
+
+// ---- js/engine/comfort.js ----
+/**
+ * Comfort floor - handover decision D3.
+ *
+ * Nothing in any of the six reports prevented the game rewarding a household
+ * for under-heating, which is exactly the pattern the "Op koers?" dashboard
+ * reads as hardship. This module closes that loop: savings are credited only
+ * down to the floor, and consumption below it earns nothing further.
+ *
+ * COMFORT_FLOOR_RATIO is a documented PLACEHOLDER. DACS sets the real value
+ * per home type and season under D3.
+ */
+
+const COMFORT_FLOOR_RATIO = 0.80;
+
+/** Report 2's hidden energy-poverty rule: below 40% of expected... */
+const POVERTY_RATIO = 0.40;
+/** ...sustained for three months or more. */
+const POVERTY_MIN_DAYS = 90;
+
+/** The lowest consumption level that still earns credit. */
+function floorValue(expected, ratio = COMFORT_FLOOR_RATIO) {
+  return expected * ratio;
+}
+
+/**
+ * Tolerance for the floor comparison.
+ *
+ * expected * ratio is not exact in binary floating point - 6 * 0.8 is
+ * 4.800000000000001 - so a household sitting exactly on the floor would
+ * otherwise be misclassified as under-heating and lose its credit.
+ */
+const FLOOR_EPSILON = 1e-9;
+
+/** True when actual consumption has dropped below the comfort floor. */
+function isBelowComfortFloor(expected, actual, ratio = COMFORT_FLOOR_RATIO) {
+  return actual < floorValue(expected, ratio) - FLOOR_EPSILON;
+}
+
+/**
+ * The consumption figure the savings engine is allowed to reward.
+ * Clamped UP to the floor, so cutting below it yields no extra euros.
+ */
+function rewardableConsumption(expected, actual, ratio = COMFORT_FLOOR_RATIO) {
+  return Math.max(actual, floorValue(expected, ratio));
+}
+
+/**
+ * Report 2's hidden energy-poverty signal, evaluated over the most recent run
+ * of consecutive days. Returns the length of the current below-threshold run.
+ */
+function hiddenPovertySignal(pairs) {
+  let daysBelow = 0;
+  for (let i = pairs.length - 1; i >= 0; i -= 1) {
+    const { expectedGas, actualGas } = pairs[i];
+    if (expectedGas > 0 && actualGas < expectedGas * POVERTY_RATIO) daysBelow += 1;
+    else break;
+  }
+  return { flagged: daysBelow >= POVERTY_MIN_DAYS, daysBelow };
+}
+
+// ---- js/engine/savings.js ----
+/**
+ * THE SINGLE SOURCE OF TRUTH FOR EVERY EURO IN THE APP.
+ *
+ * Handover decision D4: three reports priced the same behaviour differently and
+ * at least one was wrong. No screen may compute its own euros - they all read
+ * from here.
+ *
+ * Only usage-based gas and electricity vary with behaviour (Report 4's cost
+ * model, adopted as canonical). Fixed costs and taxes are 38% of the bill and
+ * behaviour cannot touch them.
+ */
+
+
+/** Canonical. Equals EUR 0,15/kWh at ~8,8 kWh/m3 - one price, two units. */
+const PRICE_GAS_EUR_PER_M3 = 1.35;
+
+/**
+ * ASSUMPTION A1 - not fixed by any report. Must be confirmed before any
+ * external use, and is labelled as unconfirmed on the "Over deze cijfers" page.
+ */
+const PRICE_ELEC_EUR_PER_KWH = 0.35;
+
+/** Share of the bill behaviour cannot influence. */
+const FIXED_COST_SHARE = 0.38;
+
+/**
+ * Turning the thermostat down 1 degree: 0,9 kWh ~ EUR 0,14/day.
+ * Report 5 priced this at EUR 0,90 by copying a kWh figure into euros.
+ * That error must not reappear anywhere.
+ */
+const THERMOSTAT_1C_EUR_PER_DAY = 0.14;
+
+function toEuro(gasM3, elecKwh) {
+  return gasM3 * PRICE_GAS_EUR_PER_M3 + elecKwh * PRICE_ELEC_EUR_PER_KWH;
+}
+
+/**
+ * Signed daily saving. THIS is what the Savings tab reports - it goes down on
+ * days above expected, and that honesty is the point.
+ */
+function netSaving(expected, actual) {
+  return toEuro(expected.gas_m3 - actual.gas_m3, expected.elec_kwh - actual.elec_kwh);
+}
+
+/** Net, floored at zero. Used to decide whether a day counts for the streak. */
+function grossSaving(expected, actual) {
+  return Math.max(0, netSaving(expected, actual));
+}
+
+/**
+ * One day's saving with the comfort floor applied, sign preserved.
+ *
+ * A fuel whose consumption fell BELOW the comfort floor contributes nothing at
+ * all that day - not even the saving down to the floor. A household heating
+ * below the safe band is in hardship, not saving, and the app must never pay
+ * for that. Crediting down to the floor would make the coldest, hardest days
+ * the most profitable of the year, which inverts the purpose of decision D3.
+ *
+ * Days above expected still contribute negatively, so bad days offset good.
+ */
+function comfortCappedNet(expected, actual) {
+  const gas = isBelowComfortFloor(expected.gas_m3, actual.gas_m3)
+    ? 0
+    : expected.gas_m3 - actual.gas_m3;
+  const elec = isBelowComfortFloor(expected.elec_kwh, actual.elec_kwh)
+    ? 0
+    : expected.elec_kwh - actual.elec_kwh;
+  return toEuro(gas, elec);
+}
+
+/**
+ * One day's saving, floored at zero and capped by the comfort floor.
+ *
+ * WARNING: do NOT accumulate this across days. Flooring every day discards the
+ * negative half of daily variation while banking the positive half, so a
+ * household that saved nothing still accrues euros from noise alone. On this
+ * demo series that bias was worth about EUR 95 a year - more than twice the
+ * real ceiling. Use cumulativeCredited() for any running total.
+ *
+ * Kept for single-day display only.
+ */
+function creditedSaving(expected, actual) {
+  return Math.max(0, comfortCappedNet(expected, actual));
+}
+
+/**
+ * Total credited euros across a paired series.
+ *
+ * Sums the SIGNED comfort-capped daily figure and floors the total once, so
+ * good and bad days offset and only genuine sustained saving accumulates.
+ * May be lower than a previous call's result on a bad run - the tree does not
+ * regress because levels track the high-water mark (see treeProgress()).
+ */
+function cumulativeCredited(expectedList, actualList) {
+  if (expectedList.length !== actualList.length) {
+    throw new Error(
+      `cumulativeCredited: series length mismatch (${expectedList.length} vs ${actualList.length})`
+    );
+  }
+  return Math.max(0, expectedList.reduce(
+    (sum, e, i) => sum + comfortCappedNet(e, actualList[i]), 0
+  ));
+}
+
+/**
+ * The figure the tree reads: the highest cumulative total ever reached.
+ * This is what guarantees the tree never shrinks, without needing the
+ * noise-banking daily floor that guarantee used to rely on.
+ */
+function treeProgress(expectedList, actualList) {
+  let running = 0;
+  let peak = 0;
+  expectedList.forEach((e, i) => {
+    running += comfortCappedNet(e, actualList[i]);
+    peak = Math.max(peak, running);
+  });
+  return peak;
+}
+
+/**
+ * Points per euro saved.
+ *
+ * Tip and notification copy is points-denominated rather than euro-denominated.
+ * That deliberately sidesteps the EUR 0,90-vs-EUR 0,14 contradiction the
+ * handover flags between Reports 3 and 5: a point is an internal unit and
+ * cannot be wrong about somebody's bill.
+ *
+ * Confirmed by the team on 2026-08-10 (brief, section 5 checklist). Euro
+ * figures still appear where euros are the honest unit - the headline saving,
+ * the Savings screen, and the per-tip annual estimates.
+ */
+const POINTS_PER_EURO = 100;
+
+/** Converts a euro amount to whole points. */
+function toPoints(euros) {
+  return Math.round(euros * POINTS_PER_EURO);
+}
+
+/**
+ * The physical saving behind the credited euros, so kWh and m3 can be shown
+ * as a secondary figure beside the euro (brief, Act 5).
+ */
+function comfortCappedUnits(expected, actual) {
+  const gas = isBelowComfortFloor(expected.gas_m3, actual.gas_m3)
+    ? 0 : expected.gas_m3 - actual.gas_m3;
+  const elec = isBelowComfortFloor(expected.elec_kwh, actual.elec_kwh)
+    ? 0 : expected.elec_kwh - actual.elec_kwh;
+  return { gas_m3: gas, elec_kwh: elec };
+}
+
+/** Totals the physical saving across a paired series, floored at zero. */
+function cumulativeUnits(expectedList, actualList) {
+  return expectedList.reduce((sum, e, i) => {
+    const u = comfortCappedUnits(e, actualList[i]);
+    return { gas_m3: sum.gas_m3 + u.gas_m3, elec_kwh: sum.elec_kwh + u.elec_kwh };
+  }, { gas_m3: 0, elec_kwh: 0 });
+}
+
+/** Dutch number with a comma decimal separator. */
+function formatNumber(value, decimals = 1) {
+  return value.toFixed(decimals).replace('.', ',');
+}
+
+/** Dutch euro formatting: comma decimal separator, always two decimals. */
+function formatEuro(amount) {
+  return `\u20AC${amount.toFixed(2).replace('.', ',')}`;
+}
+
+// ---- js/engine/periods.js ----
+/**
+ * The monthly / seasonal / yearly toggle on the Savings screen
+ * (demonstrator brief, section 3).
+ *
+ * Only 45 measured days exist, so one of these three periods cannot be
+ * measured - it can only be projected. That distinction is the whole point of
+ * this module: `measured` says whether the figure counts real days or
+ * extrapolates from them, and the screen is required to label a projection as
+ * one. The handover's central complaint about the reports is exactly that
+ * illustrative figures were presented as though they had been measured.
+ */
+
+
+/**
+ * Days a Dutch heating season realistically runs.
+ *
+ * This is the denominator the yearly projection has to use. Every measured day
+ * in the report window is a heating-season day, so scaling its rate across all
+ * 365 days silently assumes a household saves as much on gas in July as in
+ * January. It does not - and doing so tripled the projection past both Report
+ * 4's EUR 44 headline and the EUR 62 recalculated ceiling.
+ */
+const HEATING_DAYS_PER_YEAR = 150;
+
+const PERIODS = Object.freeze([
+  Object.freeze({ id: 'month', days: 30, nl: 'Maand', en: 'Month' }),
+  Object.freeze({ id: 'season', days: null, nl: 'Seizoen', en: 'Season' }),
+  Object.freeze({ id: 'year', days: null, nl: 'Jaar', en: 'Year' }),
+]);
+
+function periodById(id) {
+  return PERIODS.find((p) => p.id === id) ?? PERIODS[0];
+}
+
+/**
+ * Totals for one period.
+ *
+ * month  - the last 30 measured days, or fewer if fewer exist.
+ * season - every measured day in the report window.
+ * year   - the measured daily rate scaled to 365 days. A projection.
+ *
+ * @returns {{ id, days, net, credited, perDay, measured, basedOnDays? }}
+ */
+function periodTotals(expectedSeries, readings, periodId) {
+  const period = periodById(periodId);
+  const total = readings.length;
+
+  const take = period.id === 'month' ? Math.min(period.days, total) : total;
+  const expected = expectedSeries.slice(-take);
+  const actual = readings.slice(-take);
+
+  const net = expected.reduce((sum, e, i) => sum + netSaving(e, actual[i]), 0);
+  const credited = cumulativeCredited(expected, actual);
+  const perDay = take === 0 ? 0 : net / take;
+
+  if (period.id !== 'year') {
+    return { id: period.id, days: take, net, credited, perDay, measured: true };
+  }
+
+  // Projected across the heating season only - see HEATING_DAYS_PER_YEAR.
+  return {
+    id: 'year',
+    days: HEATING_DAYS_PER_YEAR,
+    net: perDay * HEATING_DAYS_PER_YEAR,
+    credited: (take === 0 ? 0 : credited / take) * HEATING_DAYS_PER_YEAR,
+    perDay,
+    measured: false,
+    basedOnDays: take,
+  };
+}
+
+// ---- js/engine/levels.js ----
+/**
+ * The growing tree: six levels, each harder to reach than the last.
+ *
+ * The tree changes ONLY at level-up, never continuously, and never wilts or
+ * shrinks. On a bad day it simply does not grow. This is a deliberate
+ * departure from Report 5's melting-ice mascot, which the critical review
+ * found applies loss aversion to a financially vulnerable group - producing
+ * guilt in households that have no remaining action available.
+ *
+ * Thresholds are cumulative CREDITED euros (js/engine/savings.js), which are
+ * floored at zero and capped by the comfort floor.
+ */
+
+/**
+ * Report 4's headline annual saving. The handover's recalculation puts the
+ * realistic ceiling nearer EUR 62. Every promise must stay below the true
+ * ceiling - a full tree at EUR 40 sits under both.
+ */
+const ANNUAL_CEILING_EUR = 44;
+
+const LEVELS = Object.freeze([
+  Object.freeze({ level: 1, threshold: 0, nl: 'Zaadje', en: 'Seed' }),
+  Object.freeze({ level: 2, threshold: 2.5, nl: 'Kiem', en: 'Sprout' }),
+  Object.freeze({ level: 3, threshold: 7, nl: 'Jong plantje', en: 'Seedling' }),
+  Object.freeze({ level: 4, threshold: 14, nl: 'Struikje', en: 'Shrub' }),
+  Object.freeze({ level: 5, threshold: 25, nl: 'Jonge boom', en: 'Young tree' }),
+  Object.freeze({ level: 6, threshold: 40, nl: 'Volgroeide boom', en: 'Full tree' }),
+]);
+
+/** Current level (1..6) for a cumulative credited total. */
+function levelFor(cumulativeEur) {
+  let level = 1;
+  for (const stage of LEVELS) {
+    if (cumulativeEur >= stage.threshold) level = stage.level;
+  }
+  return level;
+}
+
+/** The stage record for the current level. */
+function stageFor(cumulativeEur) {
+  return LEVELS[levelFor(cumulativeEur) - 1];
+}
+
+/** Progress toward the next level. `next` is null once level 6 is reached. */
+function progressToNext(cumulativeEur) {
+  const current = stageFor(cumulativeEur);
+  const next = LEVELS[current.level] ?? null;
+
+  if (!next) return { current, next: null, euroToNext: 0, fraction: 1 };
+
+  const span = next.threshold - current.threshold;
+  const gained = cumulativeEur - current.threshold;
+  return {
+    current,
+    next,
+    euroToNext: next.threshold - cumulativeEur,
+    fraction: span === 0 ? 1 : Math.min(1, Math.max(0, gained / span)),
+  };
+}
+
+/** One streak shield is granted per level-up. */
+function shieldsEarned(level) {
+  return Math.max(0, level - 1);
+}
+
+// ---- js/engine/streak.js ----
+/**
+ * Streaks with a forgiveness day and shields (Report 5).
+ *
+ * A day qualifies when the daily action was completed OR the day's net saving
+ * was positive. One missed day per rolling week is forgiven automatically;
+ * beyond that a shield (one per level-up) may be spent; beyond that the
+ * streak breaks.
+ *
+ * The forgiveness day exists because the target group includes people who are
+ * away, unwell, or simply cannot act on a given day. Breaking a streak for
+ * that would punish circumstance rather than behaviour.
+ *
+ * A forgiven day COUNTS toward the streak length. The alternative - preserving
+ * the run but not the number - makes the streak appear to stall on a day the
+ * app just told the tenant was forgiven, which reads as a broken promise.
+ */
+
+const FORGIVENESS_WINDOW_DAYS = 7;
+const FORGIVENESS_ALLOWANCE = 1;
+
+/**
+ * Walks the history newest-first and stops at the first unabsorbed miss.
+ * Returns the current run length and what was spent to keep it alive.
+ */
+function computeStreak(days, shieldsAvailable = 0) {
+  let length = 0;
+  let forgivenessUsed = 0;
+  let shieldsUsed = 0;
+  let shieldsLeft = shieldsAvailable;
+  const missIndices = [];
+
+  for (let i = days.length - 1; i >= 0; i -= 1) {
+    const day = days[i];
+
+    if (day.qualified) {
+      length += 1;
+      continue;
+    }
+
+    // Walking newest-first, every absorbed miss has an index greater than i.
+    // Count those lying within seven days ahead of the one being judged.
+    const windowEnd = i + FORGIVENESS_WINDOW_DAYS - 1;
+    const missesInWindow = missIndices.filter((idx) => idx <= windowEnd).length;
+
+    if (missesInWindow < FORGIVENESS_ALLOWANCE) {
+      missIndices.push(i);
+      forgivenessUsed += 1;
+      length += 1;
+      continue;
+    }
+
+    if (shieldsLeft > 0) {
+      shieldsLeft -= 1;
+      shieldsUsed += 1;
+      missIndices.push(i);
+      length += 1;
+      continue;
+    }
+
+    return { length, forgivenessUsed, shieldsUsed, brokenOn: day.date };
+  }
+
+  return { length, forgivenessUsed, shieldsUsed, brokenOn: null };
+}
+
+// ---- js/engine/health.js ----
+/**
+ * Tree health: the wilt mechanism from the tree-mascot report.
+ *
+ * The report specifies loss aversion "on sustained decline, not on a single
+ * bad day - same forgiveness-day-plus-shield scheme as the streak". So a
+ * single day above expectation does nothing; only a persistent run does.
+ *
+ * SAFEGUARD, and it is not optional. Days below the comfort floor are excluded
+ * entirely - they neither count as decline nor reset the count. A household
+ * heating below the safe band already earns nothing (decision D3); wilting the
+ * tree at them as well would put a dying plant on top of a cold house, and
+ * would punish exactly the hardship the dashboard reads as energy poverty.
+ * Wilting must only ever respond to using MORE than expected.
+ */
+
+/** Days of history the wilt check looks back over. */
+const WILT_WINDOW_DAYS = 14;
+
+/** Declining days within that window before the tree wilts. */
+const WILT_THRESHOLD_DAYS = 10;
+
+/** Declining days before the tree looks thirsty - the early, gentle warning. */
+const THIRSTY_THRESHOLD_DAYS = 6;
+
+const HEALTHY = 'healthy';
+const THIRSTY = 'thirsty';
+const WILTING = 'wilting';
+
+/**
+ * Assesses the tree from recent days.
+ *
+ * `days` is [{ net: number, belowFloor: boolean }], oldest first. A day
+ * declines when net < 0 (more used than expected) AND the household was not
+ * below the comfort floor.
+ *
+ * `shieldsAvailable` absorb declining days, exactly as they do for streaks.
+ */
+function treeHealth(days, shieldsAvailable = 0) {
+  const window = days.slice(-WILT_WINDOW_DAYS);
+  const counted = window.filter((d) => !d.belowFloor);
+  const declining = counted.filter((d) => d.net < 0).length;
+
+  const absorbed = Math.max(0, declining - shieldsAvailable);
+  const shieldsUsed = Math.min(shieldsAvailable, declining);
+
+  let state = HEALTHY;
+  if (absorbed >= WILT_THRESHOLD_DAYS) state = WILTING;
+  else if (absorbed >= THIRSTY_THRESHOLD_DAYS) state = THIRSTY;
+
+  return { state, decliningDays: declining, absorbed, shieldsUsed,
+           excludedByComfortFloor: window.length - counted.length };
+}
+
+/** Plain-language explanation. Never blames; always names the way back. */
+function healthMessage(health, lang) {
+  if (health.state === HEALTHY) return null;
+  if (health.state === THIRSTY) {
+    return lang === 'en'
+      ? 'Your tree could use some attention. You have used a little more than expected on ' + health.decliningDays + ' recent days.'
+      : 'Je boom kan wat aandacht gebruiken. Je gebruikte op ' + health.decliningDays + ' van de afgelopen dagen wat meer dan verwacht.';
+  }
+  return lang === 'en'
+    ? 'Your tree is drooping. Use less than expected for a few days and it picks up again - it never loses a growth stage.'
+    : 'Je boom hangt er slap bij. Gebruik een paar dagen minder dan verwacht, dan veert hij weer op. Hij verliest nooit een groeistap.';
+}
+
+// ---- js/data/tips.js ----
+/**
+ * Tips, ranked by what they actually save.
+ *
+ * Every euro figure is derived from the canonical prices in engine/savings.js
+ * and carries its assumption on screen. Report 6's review found the original
+ * tip figures were illustrative but presented as measured; these are labelled.
+ *
+ * Figures are per tip. They are NOT additive: doing all of them does not save
+ * their sum, and no screen may total this list. Their sum deliberately exceeds
+ * the annual ceiling because no household does all five perfectly - but no
+ * SINGLE tip may exceed it, which is enforced by a test.
+ *
+ * Assumptions are sized for the target household: one person, 70 m2, energy
+ * label E. A first pass used 50 W of standby draw and daily showers, which
+ * produced a EUR 153/year tip - more than twice the entire realistic annual
+ * ceiling from one action. That is the exact over-claim the handover condemns.
+ */
+
+
+
+/**
+ * Days a Dutch heating season realistically runs. Shared with the yearly
+ * projection on the Savings screen: one climate assumption, not two that can
+ * drift apart.
+ */
+const HEATING_DAYS = HEATING_DAYS_PER_YEAR;
+
+const TIPS = Object.freeze([
+  Object.freeze({
+    id: 'thermostat',
+    euroPerYear: THERMOSTAT_1C_EUR_PER_DAY * HEATING_DAYS,
+    nl: { title: 'Thermostaat 1 graad lager',
+          body: 'Van 20 naar 19 graden. Een trui scheelt meer dan je denkt.',
+          basis: '0,9 m3 gas per stookdag, ' + HEATING_DAYS + ' stookdagen' },
+    en: { title: 'Thermostat one degree lower',
+          body: 'From 20 to 19 degrees. A jumper makes more difference than you would think.',
+          basis: '0.9 m3 of gas per heating day, ' + HEATING_DAYS + ' heating days' },
+  }),
+  Object.freeze({
+    id: 'shower',
+    euroPerYear: 0.03 * PRICE_GAS_EUR_PER_M3 * 300,
+    nl: { title: 'Drie minuten korter douchen',
+          body: 'Van acht naar vijf minuten. Warm water is na verwarmen je grootste gaspost.',
+          basis: '0,03 m3 gas per douchebeurt, 300 douchebeurten per jaar' },
+    en: { title: 'Shower three minutes shorter',
+          body: 'From eight minutes to five. After heating, hot water is your biggest gas cost.',
+          basis: '0.03 m3 of gas per shower, 300 showers a year' },
+  }),
+  Object.freeze({
+    id: 'unusedroom',
+    euroPerYear: 0.05 * PRICE_GAS_EUR_PER_M3 * HEATING_DAYS,
+    nl: { title: 'Radiator uit in een kamer die je niet gebruikt',
+          body: 'Houd de deur dicht. Laat het nooit onder de 15 graden komen, anders krijg je vocht.',
+          basis: '0,05 m3 gas per stookdag' },
+    en: { title: 'Radiator off in a room you do not use',
+          body: 'Keep the door shut. Never let it drop below 15 degrees, or you get damp.',
+          basis: '0.05 m3 of gas per heating day' },
+  }),
+  Object.freeze({
+    id: 'coldwash',
+    euroPerYear: 0.4 * PRICE_ELEC_EUR_PER_KWH * 60,
+    nl: { title: 'Was op 30 graden',
+          body: 'Voor gewone was is 30 graden genoeg.',
+          basis: '0,4 kWh minder per wasbeurt, 60 wasbeurten per jaar' },
+    en: { title: 'Wash at 30 degrees',
+          body: 'For ordinary laundry, 30 degrees is enough.',
+          basis: '0.4 kWh less per wash, 60 washes a year' },
+  }),
+  Object.freeze({
+    id: 'standby',
+    euroPerYear: 0.006 * 24 * 365 * PRICE_ELEC_EUR_PER_KWH,
+    nl: { title: 'Apparaten echt uit in plaats van stand-by',
+          body: 'Een stekkerdoos met schakelaar doet het werk voor je.',
+          basis: '6 watt sluipverbruik (router en tv), dag en nacht' },
+    en: { title: 'Switch devices off rather than leaving them on standby',
+          body: 'A power strip with a switch does the work for you.',
+          basis: '6 watts of standby draw (router and TV), day and night' },
+  }),
+]);
+
+/** Tips ranked by yearly saving, largest first. */
+function rankedTips() {
+  return [...TIPS].sort((a, b) => b.euroPerYear - a.euroPerYear);
+}
+
+// ---- js/data/notifications.js ----
+/**
+ * The notification and tip history (demonstrator brief, section 3).
+ *
+ * The brief merges Report 6's daily tip with Report 5's notification mechanic
+ * into one card on the dashboard, and puts a history screen behind that card.
+ * This builds the history from the days that actually exist, so the dates on
+ * screen match the meter readings rather than being invented.
+ *
+ * Copy is points-denominated. Confirmed by the team on 2026-08-10, having been
+ * the brief's working default: points avoid the EUR 0,90-versus-EUR 0,14
+ * contradiction between Reports 3 and 5 that the handover flags as unresolved.
+ *
+ * Deterministic by construction - the tip for a day is a function of the day,
+ * never of Math.random(), so two runs of the demo show the same history.
+ */
+
+
+
+
+/** How many days of history the screen offers. Longer is noise, not evidence. */
+const HISTORY_LENGTH = 14;
+
+/**
+ * One notification per day, newest first.
+ *
+ * @param {Array} readings  the report-window readings, oldest first
+ * @param {Array} netByDay  net saving in euros per reading, same order
+ */
+function notificationHistory(readings, netByDay) {
+  const tips = rankedTips();
+
+  return readings
+    .map((reading, i) => {
+      const tip = tips[dayOfYear(reading.date) % tips.length];
+      const net = netByDay[i] ?? 0;
+      return {
+        date: reading.date,
+        tipId: tip.id,
+        tip,
+        // Points follow the day's actual result, so a day that went the wrong
+        // way shows nothing gained rather than a cheerful invented number.
+        points: Math.max(0, toPoints(net)),
+        improved: net > 0,
+      };
+    })
+    .slice(-HISTORY_LENGTH)
+    .reverse();
+}
+
+/** Short, plain wording for one entry. Never blames a bad day. */
+function notificationText(entry, lang) {
+  if (entry.improved) {
+    return lang === 'en'
+      ? 'You used less than expected. ' + entry.points + ' points.'
+      : 'Je gebruikte minder dan verwacht. ' + entry.points + ' punten.';
+  }
+  return lang === 'en'
+    ? 'A colder day than the model expected. Nothing is taken away.'
+    : 'Een koudere dag dan het model verwachtte. Er gaat niets af.';
+}
+
+// ---- js/data/challenges.js ----
+/**
+ * Challenges, each labelled with what can actually verify it.
+ *
+ * Report 6's review (section 3.5) found the original design assumed the P4
+ * meter could verify granular actions such as cold-washing or using natural
+ * light. It cannot: P4 exposes whole-house totals only. Claiming otherwise
+ * would be a promise the data cannot keep, so every challenge states its
+ * verification honestly.
+ */
+
+/** Whole-house gas or electricity moves enough for the meter to see it. */
+const METER_VERIFIED = 'meter';
+/** The meter cannot see this; the tenant reports it. */
+const SELF_REPORTED = 'self';
+
+/**
+ * The three lists the demonstrator brief asks the Challenges screen to toggle
+ * between: what you are doing now, what the street is doing together, and what
+ * you already finished.
+ *
+ * A community challenge is aggregate by nature, so it never exposes a single
+ * household - the same constraint the institutional dashboard works under.
+ */
+const ACTIVE = 'active';
+const COMMUNITY = 'community';
+const COMPLETED = 'completed';
+
+const CHALLENGE_FILTERS = Object.freeze([
+  Object.freeze({ id: ACTIVE, nl: 'Nu bezig', en: 'Active' }),
+  Object.freeze({ id: COMMUNITY, nl: 'Samen', en: 'Community' }),
+  Object.freeze({ id: COMPLETED, nl: 'Afgerond', en: 'Completed' }),
+]);
+
+const CHALLENGES = Object.freeze([
+  Object.freeze({
+    id: 'thermostat-week', status: ACTIVE, verification: METER_VERIFIED, days: 7,
+    nl: { title: 'Een week op 19 graden', body: 'Zet de thermostaat een graad lager en houd dat een week vol.' },
+    en: { title: 'A week at 19 degrees', body: 'Turn the thermostat down one degree and keep it there for a week.' },
+  }),
+  Object.freeze({
+    id: 'evening-baseload', status: ACTIVE, verification: METER_VERIFIED, days: 5,
+    nl: { title: 'Avondverbruik omlaag', body: 'Zet na tien uur de lampen en apparaten uit die je niet gebruikt.' },
+    en: { title: 'Lower your evening use', body: 'After ten in the evening, switch off lights and devices you are not using.' },
+  }),
+  Object.freeze({
+    id: 'short-shower', status: ACTIVE, verification: SELF_REPORTED, days: 7,
+    nl: { title: 'Zeven korte douches', body: 'Vijf minuten in plaats van acht. Vink zelf af.' },
+    en: { title: 'Seven short showers', body: 'Five minutes instead of eight. Tick it off yourself.' },
+  }),
+  Object.freeze({
+    id: 'cold-wash', status: COMPLETED, verification: SELF_REPORTED, days: 14,
+    nl: { title: 'Twee weken wassen op 30', body: 'De meter ziet dit niet apart, dus dit vink je zelf af.' },
+    en: { title: 'Two weeks washing at 30', body: 'The meter cannot see this separately, so you tick it off yourself.' },
+  }),
+  Object.freeze({
+    id: 'street-december', status: COMMUNITY, verification: METER_VERIFIED, days: 30,
+    nl: { title: 'De straat samen 5% omlaag', body: 'Alle deelnemende woningen in je postcode bij elkaar. Niemand ziet wat jij afzonderlijk gebruikt.' },
+    en: { title: 'The street down 5% together', body: 'All taking part in your postcode added up. Nobody sees what you use on your own.' },
+  }),
+  Object.freeze({
+    id: 'street-evening', status: COMMUNITY, verification: METER_VERIFIED, days: 14,
+    nl: { title: 'Avondpiek van de buurt', body: 'Samen minder verbruiken tussen zes en acht. Alleen het totaal telt.' },
+    en: { title: 'The neighbourhood evening peak', body: 'Using less together between six and eight. Only the total counts.' },
+  }),
+  Object.freeze({
+    id: 'first-week', status: COMPLETED, verification: METER_VERIFIED, days: 7,
+    nl: { title: 'Je eerste week volgehouden', body: 'Zeven dagen op rij onder de verwachting gebleven.' },
+    en: { title: 'Your first week completed', body: 'Seven days in a row below the expectation.' },
+  }),
+]);
+
+/** Human-readable verification label. */
+function verificationLabel(verification, lang) {
+  if (verification === METER_VERIFIED) {
+    return lang === 'en' ? 'Checked by your meter' : 'Meter controleert dit';
+  }
+  return lang === 'en' ? 'You tick this off' : 'Vink je zelf af';
+}
+
+// ---- js/state.js ----
+/**
+ * Application state, persisted to localStorage.
+ *
+ * Consent is granular by design (handover Q10, Report 1): a tenant who refuses
+ * an item must still get a working app, so every consent key defaults to false
+ * and nothing in the app may treat a refusal as a reason to stop.
+ *
+ * Storage is deliberately the only persistence layer. The legal gateway
+ * (handover Step 1) blocks real data regardless, so a backend would add work
+ * without adding truth.
+ */
+
+
+const STORAGE_KEY = 'woneco.state.v1';
+
+/** The data items the consent flow asks about, in the order it asks. */
+const CONSENT_ITEMS = Object.freeze([
+  Object.freeze({ key: 'meterData', nl: 'Meterstanden (gas en stroom)', en: 'Meter readings (gas and electricity)' }),
+  Object.freeze({ key: 'weather', nl: 'Weergegevens', en: 'Weather data' }),
+  Object.freeze({ key: 'homeDetails', nl: 'Gegevens over je woning', en: 'Details about your home' }),
+  Object.freeze({ key: 'shareAggregated', nl: 'Anoniem meetellen in de buurtcijfers', en: 'Count anonymously in neighbourhood figures' }),
+]);
+
+function defaultState() {
+  return {
+    language: DEFAULT_LANGUAGE,
+    onboarded: false,
+    // The tour runs once, on first open, over the live app.
+    tourDone: false,
+    // A default name is assigned rather than demanded at registration: the
+    // tree-mascot report is explicit that naming must not be a mandatory step.
+    treeName: 'Groenje',
+    // 'auto' follows the calendar; a named season lets a presenter show the
+    // decoration feature outside its own time of year.
+    season: 'auto',
+    consent: Object.fromEntries(CONSENT_ITEMS.map((i) => [i.key, false])),
+    // Pre-filled, not null: the onboarding screen shows these as the selected
+    // options, so a tenant who accepts them without touching the dropdowns
+    // must end up with exactly what they were shown. Defaults match the
+    // simulated household in js/data/household.js.
+    home: { floorAreaM2: 70, occupants: 1 },
+    shieldsUsed: 0,
+
+    // Registration and login are mockups. This flag is the ONLY thing they
+    // leave behind: no address, no password, nothing that identifies anyone.
+    registered: false,
+    // Demo device, not a product feature. See js/screens/access.js.
+    role: null,
+
+    notifications: true,
+    largeText: false,
+
+    // Which simulated household the presenter is showing. Demo device only.
+    profile: 'saver',
+
+    // Which slice the Savings screen shows, and which challenges are listed.
+    period: 'month',
+    challengeFilter: 'active',
+  };
+}
+
+/** A fresh default state. Never shared - callers may mutate their copy. */
+function createState() {
+  return defaultState();
+}
+
+/**
+ * Merges stored values over the defaults, so a state saved by an older
+ * version never leaves a key missing.
+ */
+function hydrate(stored) {
+  const base = defaultState();
+  if (!stored || typeof stored !== 'object') return base;
+  return {
+    ...base,
+    ...stored,
+    consent: { ...base.consent, ...(stored.consent ?? {}) },
+    home: { ...base.home, ...(stored.home ?? {}) },
+    language: LANGUAGES.includes(stored.language) ? stored.language : base.language,
+  };
+}
+
+/** True when the tenant has agreed to the item. Unknown items are refused. */
+function hasConsent(state, key) {
+  return state.consent[key] === true;
+}
+
+/**
+ * Sets one consent item. Returns a NEW state - never mutates the argument,
+ * so a withdrawal is always an explicit, traceable transition.
+ */
+function setConsent(state, key, granted) {
+  if (!(key in state.consent)) throw new Error(`unknown consent item: ${key}`);
+  return { ...state, consent: { ...state.consent, [key]: granted === true } };
+}
+
+/**
+ * The app is usable as long as meter readings are shared - everything else
+ * degrades gracefully. Refusing weather makes the expectation less accurate;
+ * refusing aggregation only affects the institutional dashboard.
+ */
+function isUsable(state) {
+  return hasConsent(state, 'meterData');
+}
+
+/** Reads persisted state. Corrupt storage falls back to defaults, silently. */
+function load(storage) {
+  try {
+    return hydrate(JSON.parse(storage.getItem(STORAGE_KEY)));
+  } catch {
+    return defaultState();
+  }
+}
+
+/** Persists state. Returns false if storage is unavailable or full. */
+function save(storage, state) {
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---- js/ui/tree.js ----
+/**
+ * The growing tree, six stages.
+ *
+ * Swap point for the mascot (decision D9): replace this file to change the
+ * character without touching a screen. Contract: treeSvg(level, label, opts).
+ *
+ * GROWTH is permanent: the tree changes stage only at level-up and NEVER loses
+ * a stage. HEALTH is separate and temporary - per the tree-mascot report the
+ * tree droops on sustained decline, and recovers. A wilting level-5 tree is
+ * still a level-5 tree.
+ *
+ * Wilting is only ever reached by using MORE than expected. Days below the
+ * comfort floor are excluded upstream in engine/health.js, so a household in
+ * hardship can never be shown a dying tree.
+ */
+
+
+
+const SOIL = '#6B4E32';
+const TRUNK = '#7A5433';
+
+/** Foliage palettes. Wilting is duller and browner, never dead. */
+const PALETTES = {
+  [HEALTHY]: { dark: '#1F4128', mid: '#2E5D3A', light: '#4E8055' },
+  [THIRSTY]: { dark: '#3F5230', mid: '#5A6E38', light: '#7E8F4A' },
+  [WILTING]: { dark: '#5E5A2E', mid: '#7A7038', light: '#9A8B4C' },
+};
+
+const ground =
+  '<ellipse cx="60" cy="112" rx="34" ry="7" fill="' + SOIL + '" opacity=".35"/>'
+  + '<path d="M30 96 h60 l-6 20 a4 4 0 0 1-4 3 H40 a4 4 0 0 1-4-3 Z" fill="' + SOIL + '"/>';
+
+/** Stage artwork as a function of the foliage palette. */
+const STAGES = {
+  1: (p) => '<ellipse cx="60" cy="93" rx="7" ry="9" fill="#8B6A45"/>'
+    + '<path d="M60 86 q3-5 0-9 q-3 4 0 9Z" fill="' + p.light + '"/>',
+  2: (p) => '<path d="M60 96 V78" stroke="' + p.mid + '" stroke-width="3" stroke-linecap="round"/>'
+    + '<path d="M60 84 q-11-3-13-12 q11 1 13 12Z" fill="' + p.light + '"/>'
+    + '<path d="M60 88 q11-3 13-12 q-11 1-13 12Z" fill="' + p.mid + '"/>',
+  3: (p) => '<path d="M60 96 V62" stroke="' + TRUNK + '" stroke-width="4" stroke-linecap="round"/>'
+    + '<path d="M60 74 q-15-4-18-16 q15 1 18 16Z" fill="' + p.light + '"/>'
+    + '<path d="M60 80 q15-4 18-16 q-15 1-18 16Z" fill="' + p.mid + '"/>'
+    + '<ellipse cx="60" cy="58" rx="12" ry="10" fill="' + p.mid + '"/>',
+  4: (p) => '<path d="M60 96 V52" stroke="' + TRUNK + '" stroke-width="6" stroke-linecap="round"/>'
+    + '<path d="M60 70 L44 58 M60 62 L76 50" stroke="' + TRUNK + '" stroke-width="4" stroke-linecap="round"/>'
+    + '<circle cx="42" cy="56" r="13" fill="' + p.mid + '"/>'
+    + '<circle cx="78" cy="48" r="14" fill="' + p.dark + '"/>'
+    + '<circle cx="60" cy="44" r="15" fill="' + p.light + '"/>',
+  5: (p) => '<path d="M60 96 V44" stroke="' + TRUNK + '" stroke-width="8" stroke-linecap="round"/>'
+    + '<path d="M60 66 L40 52 M60 58 L80 44" stroke="' + TRUNK + '" stroke-width="5" stroke-linecap="round"/>'
+    + '<circle cx="37" cy="48" r="16" fill="' + p.mid + '"/>'
+    + '<circle cx="83" cy="41" r="17" fill="' + p.dark + '"/>'
+    + '<circle cx="60" cy="33" r="19" fill="' + p.light + '"/>'
+    + '<circle cx="46" cy="30" r="13" fill="' + p.mid + '"/>',
+  6: (p) => '<path d="M60 96 V38" stroke="' + TRUNK + '" stroke-width="10" stroke-linecap="round"/>'
+    + '<path d="M60 62 L36 46 M60 54 L84 38 M60 46 L48 34" stroke="' + TRUNK + '" stroke-width="5" stroke-linecap="round"/>'
+    + '<circle cx="31" cy="44" r="18" fill="' + p.mid + '"/>'
+    + '<circle cx="89" cy="35" r="19" fill="' + p.dark + '"/>'
+    + '<circle cx="60" cy="26" r="22" fill="' + p.light + '"/>'
+    + '<circle cx="41" cy="26" r="15" fill="' + p.mid + '"/>'
+    + '<circle cx="79" cy="22" r="14" fill="' + p.mid + '"/>'
+    + '<circle cx="46" cy="18" r="8" fill="' + p.light + '"/>',
+};
+
+/**
+ * Seasonal decoration (tree-mascot report): the concrete mitigation for
+ * Report 5's own stated gap, that nothing is designed for engagement after the
+ * last level. Decoration is cosmetic and never affects progress.
+ */
+const SEASONS = {
+  summer: '<circle cx="88" cy="70" r="9" fill="none" stroke="#E85D4A" stroke-width="4"/>'
+    + '<circle cx="88" cy="70" r="9" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-dasharray="4.7 4.7"/>'
+    + '<path d="M28 74 a7 5 0 0 1 12 0 z" fill="#3FA9D8"/>',
+  kingsday: '<path d="M46 8 l5 8 5-8 5 8 5-8 v10 H46 z" fill="#F2B705"/>'
+    + '<rect x="46" y="18" width="20" height="3" fill="#E8A200"/>',
+  christmas: '<circle cx="50" cy="34" r="3.2" fill="#E8433A"/>'
+    + '<circle cx="72" cy="30" r="3.2" fill="#F2B705"/>'
+    + '<circle cx="60" cy="18" r="3.2" fill="#E8433A"/>'
+    + '<path d="M60 6 l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z" fill="#F2B705"/>',
+};
+
+const MAX_STAGE = Object.keys(STAGES).length;
+const SEASON_NAMES = Object.freeze(Object.keys(SEASONS));
+
+/**
+ * SVG for a level (1..MAX_STAGE), clamped.
+ * opts: { health: 'healthy'|'thirsty'|'wilting', season: keyof SEASONS }
+ */
+function treeSvg(level, label, opts = {}) {
+  const stage = Math.min(MAX_STAGE, Math.max(1, Math.round(level)));
+  const health = PALETTES[opts.health] ? opts.health : HEALTHY;
+  const palette = PALETTES[health];
+  const name = label || LEVELS[stage - 1].nl;
+
+  // Wilting droops the crown. The growth stage itself is untouched.
+  let droop = '';
+  if (health === WILTING) droop = ' transform="translate(0 3) rotate(-3 60 96)"';
+  else if (health === THIRSTY) droop = ' transform="translate(0 1)"';
+
+  // Never decorate a wilting tree - it reads as mockery.
+  const decoration = (health === HEALTHY && SEASONS[opts.season]) ? SEASONS[opts.season] : '';
+
+  return '<svg class="tree tree-' + health + '" viewBox="0 0 120 125" role="img" aria-label="'
+    + name + '">' + ground + '<g' + droop + '>' + STAGES[stage](palette) + '</g>'
+    + decoration + '</svg>';
+}
+
+// ---- js/ui/components.js ----
+/**
+ * Shared UI pieces. Pure string builders - no DOM, no framework.
+ *
+ * The chart is hand-drawn SVG rather than a charting library: it is one series
+ * against an uncertainty band, which does not justify a dependency, and it
+ * keeps the no-build, no-npm promise intact.
+ */
+
+
+function card(title, inner, extraClass = '') {
+  return `<section class="card ${extraClass}">
+    ${title ? `<h3>${title}</h3>` : ''}${inner}</section>`;
+}
+
+function statRow(label, value, hint = '') {
+  return `<div class="stat"><span class="stat-label">${label}</span>
+    <span class="stat-value">${value}</span>
+    ${hint ? `<span class="stat-hint">${hint}</span>` : ''}</div>`;
+}
+
+function progressBar(fraction, caption) {
+  const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+  return `<div class="bar" role="progressbar" aria-valuenow="${pct}"
+       aria-valuemin="0" aria-valuemax="100" aria-label="${caption}">
+    <div class="bar-fill" style="width:${pct}%"></div></div>
+    <p class="bar-caption">${caption}</p>`;
+}
+
+function euro(amount) {
+  return formatEuro(amount);
+}
+
+const W = 320;
+const H = 150;
+const PAD = 6;
+
+/**
+ * Actual gas use against the model's expectation, with its uncertainty band.
+ *
+ * This is where the data-science layer becomes legible: the band is the
+ * model's own confidence, not decoration. Where actual sits below the band,
+ * the household genuinely used less than the weather explains.
+ */
+function consumptionChart(readings, expectedSeries, lang) {
+  const actual = readings.map((r) => r.gas_m3);
+  const mid = expectedSeries.map((e) => e.gas_m3);
+  const lo = expectedSeries.map((e) => e.gasBand[0]);
+  const hi = expectedSeries.map((e) => e.gasBand[1]);
+
+  const max = Math.max(...hi, ...actual) || 1;
+  const x = (i) => PAD + (i * (W - 2 * PAD)) / Math.max(1, actual.length - 1);
+  const y = (v) => H - PAD - (v / max) * (H - 2 * PAD);
+
+  const path = (values) => values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const band = `${path(hi)} L${x(lo.length - 1).toFixed(1)} ${y(lo.at(-1)).toFixed(1)} ` +
+    lo.map((v, i) => `L${x(lo.length - 1 - i).toFixed(1)} ${y(lo[lo.length - 1 - i]).toFixed(1)}`).join(' ') + ' Z';
+
+  const legend = lang === 'en'
+    ? ['What you used', 'What was expected']
+    : ['Wat je gebruikte', 'Wat verwacht werd'];
+
+  return `<figure class="chart">
+    <svg viewBox="0 0 ${W} ${H}" role="img"
+         aria-label="${legend[0]} ${lang === 'en' ? 'versus' : 'tegenover'} ${legend[1]}">
+      <path d="${band}" fill="#2E5D3A" opacity=".14"/>
+      <path d="${path(mid)}" fill="none" stroke="#2E5D3A" stroke-width="1.5"
+            stroke-dasharray="4 3" opacity=".8"/>
+      <path d="${path(actual)}" fill="none" stroke="#1F4128" stroke-width="2.2"
+            stroke-linejoin="round"/>
+    </svg>
+    <figcaption class="legend">
+      <span class="key solid"></span>${legend[0]}
+      <span class="key dashed"></span>${legend[1]}
+    </figcaption>
+  </figure>`;
+}
+
+// ---- js/ui/assistant.js ----
+/**
+ * Watt, the assistant.
+ *
+ * Three jobs (spec section 6): he runs the first-open introduction, he answers
+ * "where do I find..." at any time, and he is the voice that speaks when the
+ * comfort floor withholds credit.
+ *
+ * Content and pure functions only - no DOM - so the copy is testable.
+ * Screens render it.
+ *
+ * Watt never scolds. The target group is over 50, on a low income, in poor
+ * housing they cannot fix. Copy that implies fault would be both wrong and
+ * counterproductive, and a test enforces it.
+ */
+
+
+const ASSISTANT_NAME = BRAND.assistant.name;
+const APP = BRAND.name;
+
+/**
+ * Watt as a character rather than an icon.
+ *
+ * A personified guide is doing a real job here: the target group has limited
+ * digital confidence, and a face that appears to be speaking to you reads as
+ * help far more readily than a floating tooltip does.
+ *
+ * `mood` is 'happy' (default) or 'thinking'. There is no sad or disappointed
+ * state - Watt explains, he never reacts to how well you are doing.
+ */
+function batterySvg(mood = 'happy') {
+  const eyes = mood === 'thinking'
+    ? '<circle cx="26" cy="40" r="3.4" fill="#1F4128"/><circle cx="42" cy="40" r="3.4" fill="#1F4128"/>'
+    : '<circle cx="26" cy="38" r="4.3" fill="#1F4128"/><circle cx="42" cy="38" r="4.3" fill="#1F4128"/>'
+      + '<circle cx="27.7" cy="36.4" r="1.7" fill="#FFFFFF"/><circle cx="43.7" cy="36.4" r="1.7" fill="#FFFFFF"/>'
+      // Raised brows. Small, but they are most of what reads as delight.
+      + '<path d="M21.5 31.5 q4.5 -3.2 9 0" stroke="#1F4128" stroke-width="1.8" fill="none" stroke-linecap="round"/>'
+      + '<path d="M37.5 31.5 q4.5 -3.2 9 0" stroke="#1F4128" stroke-width="1.8" fill="none" stroke-linecap="round"/>';
+
+  // Happy is an open grin rather than a drawn line: a stroke can only ever
+  // look polite, and Watt is the friendliest thing on the screen.
+  const mouth = mood === 'thinking'
+    ? '<path d="M28 50 q6 -3 12 0" stroke="#1F4128" stroke-width="2.6" fill="none" stroke-linecap="round"/>'
+    : '<path d="M24 45.5 q10 13 20 0 z" fill="#1F4128"/>'
+      + '<path d="M31 50 q3 3.6 6 0 z" fill="#F5837F"/>';
+
+  const cheeks = mood === 'thinking'
+    ? '<circle cx="17" cy="47" r="3" fill="#E8A200" opacity=".5"/>'
+      + '<circle cx="51" cy="47" r="3" fill="#E8A200" opacity=".5"/>'
+    : '<circle cx="16.5" cy="45" r="4.2" fill="#F5837F" opacity=".6"/>'
+      + '<circle cx="51.5" cy="45" r="4.2" fill="#F5837F" opacity=".6"/>';
+
+  return `<svg class="watt-figure" viewBox="0 0 68 92" role="img" aria-label="${ASSISTANT_NAME}">
+    <rect x="26" y="4" width="16" height="7" rx="2.5" fill="#2E5D3A"/>
+    <rect x="8" y="10" width="52" height="74" rx="13" fill="#F2B705"/>
+    <rect x="13" y="15" width="42" height="64" rx="9" fill="#FFD866"/>
+    <rect x="13" y="58" width="42" height="21" rx="9" fill="#4E8055" opacity=".55"/>
+    ${cheeks}
+    ${eyes}
+    ${mouth}
+    <path d="M34 64 l-5 9 h4 l-2 7 7 -10 h-4 z" fill="#1F4128" opacity=".65"/>
+  </svg>`;
+}
+
+/**
+ * The first-open introduction.
+ *
+ * Language comes first, before anything is explained: everything after this
+ * step is prose, and a reader who cannot follow it has no reason to continue.
+ * This step's own copy is deliberately bilingual, since at that moment we do
+ * not yet know which language to write it in.
+ *
+ * The four consent steps that follow are Report 1's journey - what data, why,
+ * what choice, what benefit - which no report ever turned into screens.
+ */
+const INTRO_STEPS = Object.freeze([
+  Object.freeze({
+    id: 'taal', kind: 'language',
+    nl: { title: 'Welke taal? / Which language?',
+          body: 'Kies de taal die je het prettigst leest. Je kunt dit later altijd veranderen.' },
+    en: { title: 'Which language? / Welke taal?',
+          body: 'Pick the language you read most comfortably. You can change this later at any time.' },
+  }),
+  Object.freeze({
+    id: 'welkom', kind: 'info',
+    nl: { title: 'Hoi, ik ben ' + ASSISTANT_NAME,
+          body: APP + ' laat zien wat je energie kost, in euro. Ik help je een paar euro per maand te besparen zonder dat je het koud krijgt.' },
+    en: { title: 'Hi, I am ' + ASSISTANT_NAME,
+          body: APP + ' shows what your energy costs, in euros. I help you save a few euros a month without getting cold.' },
+  }),
+  Object.freeze({
+    id: 'gegevens', kind: 'info',
+    nl: { title: 'Welke gegevens ik gebruik',
+          body: 'Je gas- en stroomstanden van de slimme meter, het weer bij jou in de buurt, en een paar dingen over je woning. Meer niet.' },
+    en: { title: 'Which data I use',
+          body: 'Your gas and electricity readings from the smart meter, the weather where you live, and a few things about your home. Nothing more.' },
+  }),
+  Object.freeze({
+    id: 'waarom', kind: 'info',
+    nl: { title: 'Waarom ik die nodig heb',
+          body: 'Met het weer erbij kan ik zien of je minder gebruikte dan verwacht, of dat het gewoon een zachte week was. Zonder dat kan ik je niets eerlijks vertellen.' },
+    en: { title: 'Why I need them',
+          body: 'With the weather included I can tell whether you used less than expected, or whether it was simply a mild week. Without it I cannot tell you anything honest.' },
+  }),
+  Object.freeze({
+    id: 'keuze', kind: 'consent',
+    nl: { title: 'Jouw keuze',
+          body: 'Je bepaalt zelf wat je deelt. Zeg je bij iets nee, dan werkt de app gewoon door. Ik weet dan alleen wat minder.' },
+    en: { title: 'Your choice',
+          body: 'You decide what you share. If you say no to something the app still works. I simply know a little less.' },
+  }),
+  Object.freeze({
+    id: 'oplevert', kind: 'info',
+    nl: { title: 'Wat het oplevert',
+          body: 'Reken op een paar tientjes per jaar, niet op honderden. Ik beloof je liever te weinig dan te veel.' },
+    en: { title: 'What you get out of it',
+          body: 'Expect a few tens of euros a year, not hundreds. I would rather promise you too little than too much.' },
+  }),
+  Object.freeze({
+    id: 'meter', kind: 'meter',
+    nl: { title: 'Meter koppelen',
+          body: 'Ik haal je standen op van de slimme meter. Dat gaat automatisch, je hoeft niets over te typen. Wat je vandaag gebruikt, zie je morgen.' },
+    en: { title: 'Connect your meter',
+          body: 'I collect your readings from the smart meter. That happens automatically, you never type anything in. What you use today appears tomorrow.' },
+  }),
+  Object.freeze({
+    id: 'woning', kind: 'home',
+    nl: { title: 'Je woning',
+          body: 'Hoe groot je woning is en met hoeveel mensen je woont. Daarmee vergelijk ik je met woningen zoals die van jou.' },
+    en: { title: 'Your home',
+          body: 'How big your home is and how many people live there. I use that to compare you with homes like yours.' },
+  }),
+]);
+
+const TOTAL_INTRO_STEPS = INTRO_STEPS.length;
+
+/** The step at an index, clamped so navigation can never run off either end. */
+function introStep(index) {
+  return INTRO_STEPS[Math.min(TOTAL_INTRO_STEPS - 1, Math.max(0, Math.round(index)))];
+}
+
+/**
+ * The in-app guided tour.
+ *
+ * Replaces the full-screen introduction. The tenant lands on the working app
+ * immediately and Watt speaks from a bubble anchored to each part of the
+ * screen in turn, saying what that part is and what it tells you.
+ *
+ * `anchor` is a CSS selector on the live screen. `screen` names the section
+ * the tour must open before showing the step.
+ */
+const TOUR_STEPS = Object.freeze([
+  Object.freeze({
+    id: 'welkom', screen: 'home', anchor: null,
+    nl: { title: 'Hoi, ik ben ' + ASSISTANT_NAME,
+          body: 'Ik loop even met je mee door de app en laat elk onderdeel zien. Je kunt me altijd wegklikken.' },
+    en: { title: 'Hi, I am ' + ASSISTANT_NAME,
+          body: 'Let me walk you through the app and show you each part. You can dismiss me at any time.' },
+  }),
+  Object.freeze({
+    id: 'boom', screen: 'home', anchor: '.tree',
+    nl: { title: 'Dit is je boom',
+          body: 'Hij groeit een stap zodra je genoeg bespaard hebt. Je mag hem zelf een naam geven.' },
+    en: { title: 'This is your tree',
+          body: 'It grows a step once you have saved enough. You can give it a name yourself.' },
+  }),
+  Object.freeze({
+    id: 'bedrag', screen: 'home', anchor: '.figure',
+    nl: { title: 'Wat je tot nu toe bespaarde',
+          body: 'Het grote bedrag is euro, want daar merk je het aan. Eronder staat hetzelfde in kWh en m3.' },
+    en: { title: 'What you have saved so far',
+          body: 'The large figure is euros, because that is what you notice. Below it is the same in kWh and m3.' },
+  }),
+  Object.freeze({
+    id: 'niveau', screen: 'home', anchor: '.bar',
+    nl: { title: 'Je volgende stap',
+          body: 'Deze balk laat zien hoeveel je nog nodig hebt voordat je boom weer groeit.' },
+    en: { title: 'Your next step',
+          body: 'This bar shows how much more you need before your tree grows again.' },
+  }),
+  Object.freeze({
+    id: 'tip', screen: 'home', anchor: '.tip-card',
+    nl: { title: 'Je tip van vandaag',
+          body: 'Elke dag een ding dat je kunt doen. Tik erop om eerdere tips terug te zien.' },
+    en: { title: 'Your tip for today',
+          body: 'One thing you can do each day. Tap it to see earlier tips.' },
+  }),
+  Object.freeze({
+    id: 'menu', screen: 'home', anchor: '.menu-button',
+    nl: { title: 'Alles staat achter dit knopje',
+          body: 'Hier zit de rest van de app. Ik doe hem even voor je open.' },
+    en: { title: 'Everything sits behind this button',
+          body: 'The rest of the app is in here. Let me open it for you.' },
+  }),
+
+  // The whole menu at once, before walking it. Seeing the eight parts together
+  // is what makes the walk that follows read as a list rather than a maze -
+  // Report 6's users are older and less digitally confident, and a menu they
+  // never open is a menu that does not exist.
+  Object.freeze({
+    id: 'menu-lijst', screen: 'home', drawer: true, anchor: '.drawer',
+    nl: { title: 'Dit zijn alle onderdelen',
+          body: 'Acht in totaal. Ik loop ze nu kort met je langs, van boven naar beneden.' },
+    en: { title: 'These are all the parts',
+          body: 'Eight of them. I will run through them briefly now, from top to bottom.' },
+  }),
+
+  // One short line each. The detail lives on the screens themselves.
+  Object.freeze({
+    id: 'tab-besparing', screen: 'savings', anchor: '.chart',
+    nl: { title: 'Besparing',
+          body: 'Je verbruik naast wat we verwachtten. Daar zie je of je echt bespaarde.' },
+    en: { title: 'Savings',
+          body: 'Your use against what we expected. That is where you see whether you really saved.' },
+  }),
+  Object.freeze({
+    id: 'tab-uitdagingen', screen: 'challenges', anchor: '.name-choices',
+    nl: { title: 'Uitdagingen',
+          body: 'Kleine opdrachten van een paar dagen. Alleen, of samen met de buurt.' },
+    en: { title: 'Challenges',
+          body: 'Small tasks of a few days. On your own, or together with the neighbourhood.' },
+  }),
+  Object.freeze({
+    id: 'tab-tips', screen: 'tips', anchor: '.tip-euro',
+    nl: { title: 'Tips',
+          body: 'Alle tips, op volgorde van wat ze opleveren.' },
+    en: { title: 'Tips',
+          body: 'Every tip, ordered by what it saves you.' },
+  }),
+  Object.freeze({
+    id: 'tab-doelen', screen: 'levels', anchor: '.ladder',
+    nl: { title: 'Doelen',
+          body: 'Alle zes de stappen van je boom, en waar je nu staat.' },
+    en: { title: 'Goals',
+          body: 'All six stages of your tree, and where you are now.' },
+  }),
+  Object.freeze({
+    id: 'tab-profiel', screen: 'profile', anchor: '.consent',
+    nl: { title: 'Profiel',
+          body: 'Wat je deelt, en de naam van je boom. Uitzetten mag altijd.' },
+    en: { title: 'Profile',
+          body: 'What you share, and your tree’s name. You may switch anything off.' },
+  }),
+  Object.freeze({
+    id: 'tab-instellingen', screen: 'settings', anchor: '.consent-row',
+    nl: { title: 'Instellingen',
+          body: 'Berichten, grotere letters en de taal.' },
+    en: { title: 'Settings',
+          body: 'Messages, larger text and the language.' },
+  }),
+  Object.freeze({
+    id: 'tab-berichten', screen: 'notifications', anchor: '.notices',
+    nl: { title: 'Berichten',
+          body: 'Wat ik je de afgelopen twee weken liet weten.' },
+    en: { title: 'Messages',
+          body: 'What I told you over the past fortnight.' },
+  }),
+  Object.freeze({
+    id: 'tab-info', screen: 'info', anchor: '.card',
+    nl: { title: 'Info',
+          body: 'Waar deze app voor is, en waarvoor niet.' },
+    en: { title: 'Info',
+          body: 'What this app is for, and what it is not.' },
+  }),
+  Object.freeze({
+    id: 'klaar', screen: 'home', anchor: null,
+    nl: { title: 'Dat was het',
+          body: 'Je kunt me altijd terugvragen bij Profiel, als je even kwijt bent waar iets staat.' },
+    en: { title: 'That was it',
+          body: 'You can always ask me back from Profile if you lose track of where something is.' },
+  }),
+]);
+
+const TOTAL_TOUR_STEPS = TOUR_STEPS.length;
+
+/** The tour step at an index, clamped. */
+function tourStep(index) {
+  return TOUR_STEPS[Math.min(TOTAL_TOUR_STEPS - 1, Math.max(0, Math.round(index)))];
+}
+
+/** "Waar vind ik...?" - each answer names the tab it lives on. */
+const HELP_TOPICS = Object.freeze([
+  Object.freeze({ tab: 'savings',
+    nl: { q: 'Waar zie ik hoeveel ik bespaard heb?',
+          a: 'Op Besparing. Daar staat wat je deze week en deze maand bespaard hebt.' },
+    en: { q: 'Where do I see how much I saved?',
+          a: 'On Savings. It shows what you saved this week and this month.' } }),
+  Object.freeze({ tab: 'home',
+    nl: { q: 'Wat betekent mijn boom?',
+          a: 'Op Start. Je boom groeit een stap zodra je genoeg gespaard hebt. Hij gaat nooit achteruit.' },
+    en: { q: 'What does my tree mean?',
+          a: 'On Home. Your tree grows a step once you have saved enough. It never goes backwards.' } }),
+  Object.freeze({ tab: 'tips',
+    nl: { q: 'Wat kan ik vandaag doen?',
+          a: 'Op Tips. Bovenaan staat wat het meeste oplevert.' },
+    en: { q: 'What can I do today?',
+          a: 'On Tips. The one that saves most is at the top.' } }),
+  Object.freeze({ tab: 'profile',
+    nl: { q: 'Hoe stop ik met gegevens delen?',
+          a: 'Op Profiel. Daar kun je elk onderdeel apart uitzetten, wanneer je maar wilt.' },
+    en: { q: 'How do I stop sharing data?',
+          a: 'On Profile. You can switch off each item separately, whenever you like.' } }),
+  Object.freeze({ tab: 'profile',
+    nl: { q: 'Kloppen deze bedragen?',
+          a: 'Op Profiel, onder Over deze cijfers. Het zijn voorbeeldbedragen, er is nog geen echte metergegevens.' },
+    en: { q: 'Are these amounts correct?',
+          a: 'On Profile, under About these figures. They are example amounts, there is no real meter data yet.' } }),
+]);
+
+/**
+ * What Watt says when the comfort floor withheld credit.
+ * States the fact and the reason, and offers no judgement.
+ */
+function comfortIntervention(floorDays, totalDays, lang) {
+  if (floorDays <= 0) return null;
+  if (lang === 'en') {
+    return 'On ' + floorDays + ' of ' + totalDays + ' days you heated less than is healthy for your home. Those days do not count towards your tree. Warmth is not something to save on.';
+  }
+  return 'Op ' + floorDays + ' van de ' + totalDays + ' dagen stookte je minder dan gezond is voor je woning. Die dagen tellen niet mee voor je boom. Warmte is niets om op te besparen.';
+}
+
+// ---- js/screens/onboarding.js ----
+/**
+ * First-open onboarding: Watt's clickable introduction, which doubles as the
+ * consent flow (spec section 7).
+ *
+ * Both Report 1 and Report 6 list this as missing. It is the first thing a
+ * real tenant sees, and the only place consent is actually given.
+ *
+ * Rendering is a pure function of (index, state, lang) so it can be tested
+ * without a DOM. mount() adds the event wiring.
+ */
+
+
+
+const ONBOARDING_LABELS = {
+  next: { nl: 'Verder', en: 'Next' },
+  back: { nl: 'Terug', en: 'Back' },
+  start: { nl: 'Beginnen', en: 'Get started' },
+  connect: { nl: 'Meter koppelen', en: 'Connect meter' },
+  skip: { nl: 'Overslaan', en: 'Skip' },
+  step: { nl: 'Stap {n} van {total}', en: 'Step {n} of {total}' },
+  noBlocking: {
+    nl: 'Je kunt altijd nee zeggen. De app blijft werken.',
+    en: 'You can always say no. The app keeps working.',
+  },
+};
+
+const onboardingLabel = (key, lang) => ONBOARDING_LABELS[key][lang] ?? ONBOARDING_LABELS[key].nl;
+
+/** Progress dots. Communicates length up front, which reduces drop-off. */
+function progress(index, lang) {
+  const dots = INTRO_STEPS
+    .map((_, i) => `<span class="dot${i <= index ? ' on' : ''}"></span>`)
+    .join('');
+  const text = onboardingLabel('step', lang)
+    .replace('{n}', index + 1)
+    .replace('{total}', TOTAL_INTRO_STEPS);
+  return `<div class="progress"><div class="dots">${dots}</div>
+    <p class="step-count">${text}</p></div>`;
+}
+
+/**
+ * The consent step: every item separately refusable, each defaulting to off.
+ * Nothing here may block continuing (handover Q10).
+ */
+function consentControls(state, lang) {
+  const rows = CONSENT_ITEMS.map((item) => `
+    <label class="consent-row">
+      <input type="checkbox" data-consent="${item.key}"
+             ${hasConsent(state, item.key) ? 'checked' : ''}>
+      <span>${item[lang] ?? item.nl}</span>
+    </label>`).join('');
+  return `<div class="consent">${rows}
+    <p class="reassure">${onboardingLabel('noBlocking', lang)}</p></div>`;
+}
+
+/**
+ * The language choice, as the first question.
+ *
+ * Both options are written in their own language rather than translated, so
+ * neither depends on the reader already understanding the other. The currently
+ * selected one is marked, because the app has to open in something.
+ */
+function languageControls(lang) {
+  const option = (id, label, note) =>
+    `<button class="lang-option${id === lang ? ' on' : ''}" data-lang="${id}"
+             lang="${id}"${id === lang ? ' aria-current="true"' : ''}>
+      <strong>${label}</strong><span>${note}</span>
+    </button>`;
+
+  return `<div class="lang-choice">
+    ${option('nl', 'Nederlands', 'Doorgaan in het Nederlands')}
+    ${option('en', 'English', 'Continue in English')}
+  </div>`;
+}
+
+/** A simulated meter connection. No real P4 exists; the copy says so. */
+function meterControls(lang) {
+  return `<div class="meter">
+    <button class="btn" data-action="connect">${onboardingLabel('connect', lang)}</button>
+    <p class="reassure">${lang === 'en'
+      ? 'Simulated for this demonstrator. No real meter is contacted.'
+      : 'Nagebootst voor deze demo. Er wordt geen echte meter benaderd.'}</p>
+  </div>`;
+}
+
+/** Home details. Pre-filled so nobody has to type on a phone. */
+function homeControls(state, lang) {
+  // Read straight from state - no local fallback - so what is shown is always
+  // what is stored, even if the tenant never touches these controls.
+  const area = state.home.floorAreaM2;
+  const people = state.home.occupants;
+  return `<div class="home-details">
+    <label class="field"><span>${lang === 'en' ? 'Floor area' : 'Woonoppervlak'}</span>
+      <select data-home="floorAreaM2">
+        ${[50, 60, 70, 80, 90].map((v) =>
+          `<option value="${v}"${v === area ? ' selected' : ''}>${v} m2</option>`).join('')}
+      </select></label>
+    <label class="field"><span>${lang === 'en' ? 'People living here' : 'Aantal bewoners'}</span>
+      <select data-home="occupants">
+        ${[1, 2, 3, 4].map((v) =>
+          `<option value="${v}"${v === people ? ' selected' : ''}>${v}</option>`).join('')}
+      </select></label>
+  </div>`;
+}
+
+/** Full markup for one onboarding step. Pure - no DOM access. */
+function renderOnboarding(index, state, lang = 'nl') {
+  const step = introStep(index);
+  const i = INTRO_STEPS.indexOf(step);
+  const isLast = i === TOTAL_INTRO_STEPS - 1;
+
+  let controls = '';
+  if (step.kind === 'language') controls = languageControls(lang);
+  else if (step.kind === 'consent') controls = consentControls(state, lang);
+  else if (step.kind === 'meter') controls = meterControls(lang);
+  else if (step.kind === 'home') controls = homeControls(state, lang);
+
+  return `<section class="onboarding" data-step="${step.id}" data-index="${i}">
+    ${progress(i, lang)}
+    <div class="watt">${batterySvg(
+      step.kind === 'consent' || step.kind === 'meter' || step.kind === 'home'
+        ? 'thinking' : 'happy')}</div>
+    <h2>${step[lang].title}</h2>
+    <p class="body">${step[lang].body}</p>
+    ${controls}
+    <div class="actions">
+      ${i > 0 ? `<button class="btn ghost" data-action="back">${onboardingLabel('back', lang)}</button>` : ''}
+      <button class="btn" data-action="${isLast ? 'finish' : 'next'}">
+        ${isLast ? onboardingLabel('start', lang) : onboardingLabel('next', lang)}
+      </button>
+    </div>
+  </section>`;
+}
+
+/**
+ * Wires the flow into a container.
+ * `onFinish(state)` receives the state with consent and home details applied.
+ */
+function mountOnboarding(container, initialState, lang, onFinish) {
+  let index = 0;
+  let state = initialState;
+  // `lang` may be a function, so the header's NL/EN switch can re-render this
+  // step in place. It has to: this is the first screen anyone sees, and until
+  // they are through it there is no Profile screen to change the language on.
+  const language = () => (typeof lang === 'function' ? lang() : lang);
+
+  function draw() {
+    container.innerHTML = renderOnboarding(index, state, language());
+  }
+
+  container.addEventListener('change', (event) => {
+    const consentKey = event.target.dataset?.consent;
+    if (consentKey) state = setConsent(state, consentKey, event.target.checked);
+
+    const homeKey = event.target.dataset?.home;
+    if (homeKey) {
+      state = { ...state, home: { ...state.home, [homeKey]: Number(event.target.value) } };
+    }
+  });
+
+  container.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-action]')?.dataset.action;
+    if (!action) return;
+    if (action === 'next') { index = Math.min(TOTAL_INTRO_STEPS - 1, index + 1); draw(); }
+    else if (action === 'back') { index = Math.max(0, index - 1); draw(); }
+    else if (action === 'connect') { event.target.textContent = language() === 'en' ? 'Connected' : 'Gekoppeld'; }
+    else if (action === 'finish') { onFinish({ ...state, onboarded: true }); }
+  });
+
+  draw();
+  return { draw };
+}
+
+// ---- js/screens/access.js ----
+/**
+ * Registration, login and the role selector (demonstrator brief, section 3).
+ *
+ * These three screens sit in front of the dashboard in the brief's screen map.
+ * All three are mockups: nothing is sent anywhere and no credential is ever
+ * stored. The password field exists because the brief asks for it; its value
+ * is never read back out of the field, and `state` gains a boolean and a role
+ * and nothing else - not the address, not the password.
+ *
+ * The role selector is explicitly "a demo-only device, not a real product
+ * feature". The screen says so itself, so a presenter cannot describe it to a
+ * municipality as something the product does.
+ */
+
+
+
+
+
+/** Demo device only. Tenants are the product's only real user. */
+const ROLES = Object.freeze([
+  Object.freeze({
+    id: 'tenant', glyph: '\u{1F3E0}',
+    nl: { title: 'Huurder', body: 'De app zoals een bewoner van Heerlen-Noord hem ziet.' },
+    en: { title: 'Tenant', body: 'The app as a resident of Heerlen-Noord sees it.' },
+  }),
+  Object.freeze({
+    id: 'stakeholder', glyph: '\u{1F3E2}',
+    nl: { title: 'Woningcorporatie', body: 'Geaggregeerde cijfers, geen enkel huishouden herkenbaar.' },
+    en: { title: 'Housing corporation', body: 'Aggregated figures, no household identifiable.' },
+  }),
+  Object.freeze({
+    id: 'municipality', glyph: '\u{1F3DB}',
+    nl: { title: 'Gemeente', body: 'Beleidsdashboard op postcodeniveau, met een minimale groepsgrootte.' },
+    en: { title: 'Municipality', body: 'Policy dashboard at postcode level, with a minimum group size.' },
+  }),
+]);
+
+function roleById(id) {
+  return ROLES.find((r) => r.id === id) ?? ROLES[0];
+}
+
+/**
+ * Email and password.
+ *
+ * `mode` is 'register' or 'login'. The reassurance line is not decoration:
+ * this demonstrator is shown to an audience that is being asked to trust the
+ * product with meter data, and a login form that quietly looked real would
+ * undercut exactly the argument act 3 makes.
+ */
+function renderCredentials(mode, lang = 'nl') {
+  const isRegister = mode === 'register';
+  const title = isRegister
+    ? say('Maak je account', 'Create your account', lang)
+    : say('Welkom terug', 'Welcome back', lang);
+
+  return '<section class="access" data-access="' + mode + '">'
+    + '<div class="watt" aria-hidden="true">' + batterySvg('happy') + '</div>'
+    + '<h2>' + title + '</h2>'
+    + '<p class="body">' + say(
+      'Je gegevens blijven van jou. ' + BRAND.assistant.name + ' bewaart alleen wat je hiervoor hebt aangevinkt.',
+      'Your data stays yours. ' + BRAND.assistant.name + ' keeps only what you ticked before this.', lang)
+    + '</p>'
+    + '<label class="field stacked"><span>' + say('E-mailadres', 'Email address', lang) + '</span>'
+    + '<input type="email" data-credential="email" autocomplete="off" placeholder="naam@voorbeeld.nl"></label>'
+    + '<label class="field stacked"><span>' + say('Wachtwoord', 'Password', lang) + '</span>'
+    + '<input type="password" data-credential="password" autocomplete="off"></label>'
+    + '<p class="reassure demo-only">' + say(
+      'Nagebootst scherm. Er wordt niets verstuurd en niets opgeslagen &mdash; ook je wachtwoord niet.',
+      'Simulated screen. Nothing is sent and nothing is stored &mdash; not your password either.', lang)
+    + '</p>'
+    + '<div class="actions">'
+    + '<button class="btn ghost" data-access-action="skip">' + say('Overslaan', 'Skip', lang) + '</button>'
+    + '<button class="btn" data-access-action="submit">'
+    + (isRegister ? say('Account maken', 'Create account', lang) : say('Inloggen', 'Log in', lang))
+    + '</button></div></section>';
+}
+
+/** The three roles, with the demo-only caveat impossible to miss. */
+function renderRoles(lang = 'nl') {
+  const items = ROLES.map((role) =>
+    '<button class="role" data-role="' + role.id + '">'
+    + '<span class="role-glyph" aria-hidden="true">' + role.glyph + '</span>'
+    + '<span class="role-text"><strong>' + role[lang].title + '</strong>'
+    + '<span>' + role[lang].body + '</span></span></button>').join('');
+
+  return '<section class="access" data-access="roles">'
+    + '<h2>' + say('Wie kijkt er mee?', 'Who is looking?', lang) + '</h2>'
+    + '<p class="demo-only">' + say(
+      'Dit scherm hoort niet bij het product. Het staat er alleen zodat we in deze demo alle drie de gezichtspunten kunnen laten zien. Een echte huurder krijgt deze keuze nooit.',
+      'This screen is not part of the product. It is here only so this walkthrough can show all three points of view. A real tenant never sees this choice.', lang)
+    + '</p>' + items + '</section>';
+}
+
+/** The institutional dashboard, which already exists and runs separately. */
+const DASHBOARD_URL = 'https://antoine2706.github.io/evs-dashboard/';
+
+/**
+ * The institutional roles have no phone app - their view is the dashboard.
+ * Linking to the one that exists beats inventing a screen that does not.
+ */
+function renderInstitutionalRole(role, lang = 'nl') {
+  const name = role[lang].title.toLowerCase();
+  return '<section class="access" data-access="institutional">'
+    + '<h2>' + role[lang].title + '</h2>'
+    + '<p class="body">' + say(
+      'Deze rol gebruikt de app niet. Wat een ' + name + ' ziet is het dashboard, en dat draait apart.',
+      'This role does not use the app. What a ' + name + ' sees is the dashboard, which runs separately.', lang)
+    + '</p>'
+    + '<p class="demo-only">' + say(
+      'De cijfers in dat dashboard zijn nagebootst en staan daar ook zo gelabeld.',
+      'The figures in that dashboard are synthetic and are labelled as such there.', lang)
+    + '</p>'
+    + '<div class="actions">'
+    + '<button class="btn ghost" data-access-action="roles">' + say('Andere rol', 'Another role', lang) + '</button>'
+    + '<a class="btn" href="' + DASHBOARD_URL + '" target="_blank" rel="noopener noreferrer">'
+    + say('Dashboard openen', 'Open dashboard', lang) + '</a>'
+    + '</div></section>';
+}
+
+/**
+ * Runs registration or login, then the role selector, then hands over.
+ *
+ * @param {HTMLElement} container
+ * @param {object} opts { store, onDone() }
+ */
+function mountAccess(container, opts) {
+  const { store, onDone } = opts;
+  const lang = () => store.get().language;
+
+  // Whatever is on screen, so the header's NL/EN switch can re-render it. None
+  // of these screens has a drawer, so this is the only way to change language
+  // before registration is finished.
+  let redraw = () => {};
+
+  function showRoles() {
+    redraw = () => { container.innerHTML = renderRoles(lang()); };
+    redraw();
+  }
+
+  function showCredentials() {
+    const mode = store.get().registered ? 'login' : 'register';
+    redraw = () => { container.innerHTML = renderCredentials(mode, lang()); };
+    redraw();
+  }
+
+  function showConsentJourney() {
+    // The consent journey is the seven-step flow Watt already owns. The brief
+    // puts it inside registration rather than in front of the whole app.
+    // mountOnboarding is called once - re-running it would stack listeners, so
+    // the language switch goes through its own draw().
+    const view = mountOnboarding(container, store.get(), lang, (next) => {
+      // Merge only what the journey owns. It captured the state at mount time,
+      // so writing the whole object back would undo anything changed since -
+      // including the language picked on its own first step.
+      store.set({
+        ...store.get(),
+        consent: next.consent,
+        home: next.home,
+        onboarded: true,
+      });
+      showCredentials();
+    });
+    redraw = view.draw;
+  }
+
+  container.addEventListener('click', (event) => {
+    // The first onboarding step asks which language before anything is
+    // explained. mountOnboarding does not own the store, so the choice is
+    // applied here and redrawn through it.
+    const chosen = event.target.closest('[data-lang]')?.dataset.lang;
+    if (chosen) {
+      if (chosen !== lang()) store.set({ ...store.get(), language: chosen });
+      return;
+    }
+
+    const action = event.target.closest('[data-access-action]')?.dataset.accessAction;
+
+    if (action === 'submit') {
+      // The password is deliberately never read back out of the field.
+      store.set({ ...store.get(), registered: true });
+      showRoles();
+      return;
+    }
+    if (action === 'skip' || action === 'roles') { showRoles(); return; }
+
+    const role = event.target.closest('[data-role]')?.dataset.role;
+    if (!role) return;
+    store.set({ ...store.get(), role });
+    if (role === 'tenant') { onDone(); return; }
+    redraw = () => { container.innerHTML = renderInstitutionalRole(roleById(role), lang()); };
+    redraw();
+  });
+
+  if (store.get().registered) showCredentials();
+  else showConsentJourney();
+
+  return { redraw: () => redraw() };
+}
+
+// ---- js/screens/more.js ----
+/**
+ * The three drawer screens the demonstrator brief lists: Settings,
+ * Notifications and Info.
+ *
+ * Info is the app's own account of what the Energieverdienspel is, what it is
+ * not, and how far along it actually is. It paraphrases the DACS handover
+ * (Clean EVS.pdf, Bullet 1) and is the only place in the app carrying the
+ * energy-poverty figures, so it is also the place to change them.
+ *
+ * Pure functions of (app, state, lang), like every other screen.
+ */
+
+
+
+
+
+/**
+ * The Heerlen energy-poverty rate, agreed 2026-08-10.
+ *
+ * Source: DACS handover, Bullet 1 - "an estimated 13.4% of households live in
+ * energy poverty, more than double the Dutch national average of roughly
+ * 6.1%". Two other figures circulated (a 20% TNO estimate on a different
+ * definition, and absolute household counts). This one was chosen because it
+ * is the figure the project's own handover publishes, so the app and the
+ * document cannot contradict each other in front of the municipality.
+ *
+ * Change both together, and change them here only.
+ */
+const ENERGY_POVERTY_HEERLEN = '13,4%';
+const ENERGY_POVERTY_NL = '6,1%';
+
+/** What the app is, in the order a reader needs it. Source: handover Bullet 1. */
+const INFO_SECTIONS = Object.freeze([
+  Object.freeze({
+    id: 'what',
+    nl: { title: 'Wat is het Energieverdienspel?',
+          lead: 'Een app zonder winstoogmerk voor huurders van sociale huurwoningen. Heerlen-Noord is de eerste buurt.',
+          points: ['Dagelijkse meterstanden uit de P4-poort van je slimme meter.',
+                   'Je verbruik omgerekend naar euro&rsquo;s, met concreet advies.',
+                   'Een boom die groeit zolang je onder de verwachting blijft.'] },
+    en: { title: 'What is the Energieverdienspel?',
+          lead: 'A non-profit app for social housing tenants. Heerlen-Noord is the first neighbourhood.',
+          points: ['Daily meter readings from the P4 port of your smart meter.',
+                   'Your use converted into euros, with concrete advice.',
+                   'A tree that grows for as long as you stay below the expectation.'] },
+  }),
+  Object.freeze({
+    id: 'problem',
+    nl: { title: 'Waarom',
+          lead: 'In Heerlen leeft naar schatting ' + ENERGY_POVERTY_HEERLEN
+            + ' van de huishoudens in energiearmoede, ruim het dubbele van het landelijke gemiddelde van ongeveer '
+            + ENERGY_POVERTY_NL + '.',
+          points: ['In Heerlen-Noord heeft de helft van de woningen een laag energielabel.',
+                   'Een huurder kan het gebouw niet repareren. Isolatie is aan de verhuurder.',
+                   'Wat je w&eacute;l kunt be&iuml;nvloeden is je eigen gebruik. Daar gaat deze app over.'] },
+    en: { title: 'Why',
+          lead: 'In Heerlen an estimated ' + ENERGY_POVERTY_HEERLEN
+            + ' of households live in energy poverty, more than double the national average of roughly '
+            + ENERGY_POVERTY_NL + '.',
+          points: ['In Heerlen-Noord half of the homes carry a low energy label.',
+                   'A tenant cannot fix the building. Insulation is the landlord&rsquo;s decision.',
+                   'What you can influence is your own use. That is what this app is about.'] },
+  }),
+  Object.freeze({
+    id: 'not',
+    nl: { title: 'Wat het niet is',
+          lead: 'Om misverstanden te voorkomen.',
+          points: ['Geen renovatie- of subsidieprogramma.',
+                   'Geen realtime energiemonitor.',
+                   'Geen energieleverancier en geen overstapdienst.',
+                   'Geen commercieel product.'] },
+    en: { title: 'What it is not',
+          lead: 'To prevent misunderstanding.',
+          points: ['Not a renovation or subsidy programme.',
+                   'Not a real-time energy monitor.',
+                   'Not an energy supplier and not a switching service.',
+                   'Not a commercial product.'] },
+  }),
+  Object.freeze({
+    id: 'comfort',
+    nl: { title: 'Warmte telt niet als besparing',
+          lead: 'Het doel is een lagere rekening bij hetzelfde comfort, niet minder stoken en slechter wonen.',
+          points: ['Stook je ver onder wat het weer vraagt, dan schrijven we niets bij.',
+                   'Je boom gaat daar ook niet van hangen. Een koud huis is geen fout.'] },
+    en: { title: 'Warmth does not count as saving',
+          lead: 'The goal is a lower bill at the same comfort, not heating less and living worse.',
+          points: ['If you heat far below what the weather calls for, nothing is credited.',
+                   'Your tree does not droop for it either. A cold house is not a failure.'] },
+  }),
+]);
+
+function renderSettings(app, state, lang) {
+  const toggle = (key, on, labelText, hint) =>
+    '<label class="consent-row"><input type="checkbox" data-setting="' + key + '"'
+    + (on ? ' checked' : '') + '><span>' + labelText
+    + (hint ? '<span class="stat-hint">' + hint + '</span>' : '') + '</span></label>';
+
+  return '<h2>' + say('Instellingen', 'Settings', lang) + '</h2>'
+    + card(say('Berichten', 'Messages', lang),
+        toggle('notifications', state.notifications !== false,
+          say('Stuur me een bericht als er iets te melden is',
+              'Send me a message when there is something to report', lang),
+          say('Hoogstens &eacute;&eacute;n per dag. Nooit &rsquo;s nachts.',
+              'At most one a day. Never at night.', lang))
+        + '<p class="reassure">' + say(
+          'Uitzetten kan altijd. De app houdt je besparing gewoon bij.',
+          'You can switch this off at any time. The app keeps tracking your saving either way.', lang)
+        + '</p>')
+    + card(say('Lezen', 'Reading', lang),
+        toggle('largeText', state.largeText === true,
+          say('Grotere letters', 'Larger text', lang),
+          say('Voor als de standaardtekst te klein is.',
+              'For when the default text is too small.', lang)))
+    + card(say('Taal', 'Language', lang),
+        '<div class="actions"><button class="btn ghost" data-lang="nl">Nederlands</button>'
+        + '<button class="btn ghost" data-lang="en">English</button></div>')
+    + card(say('Je gegevens', 'Your data', lang),
+        '<p>' + say(
+          'Wat je deelt en de naam van je boom staan bij Profiel.',
+          'What you share and your tree&rsquo;s name are under Profile.', lang) + '</p>'
+        + '<div class="actions"><button class="btn ghost" data-open="profile">'
+        + say('Naar Profiel', 'Go to Profile', lang) + '</button></div>');
+}
+
+function renderNotifications(app, state, lang) {
+  const entries = notificationHistory(app.readings, app.netByDay);
+
+  const items = entries.map((entry) =>
+    '<li class="notice' + (entry.improved ? ' good' : '') + '">'
+    + '<span class="notice-date">' + entry.date + '</span>'
+    + '<span class="notice-body">' + notificationText(entry, lang) + '</span>'
+    + '<span class="notice-tip">' + entry.tip[lang].title + '</span></li>').join('');
+
+  const off = state.notifications === false
+    ? card(say('Berichten staan uit', 'Messages are switched off', lang),
+        '<p>' + say(
+          'Je krijgt geen bericht meer. Hieronder staat wel wat er gebeurd is.',
+          'You no longer receive messages. What happened is still listed below.', lang) + '</p>', 'warn')
+    : '';
+
+  return '<h2>' + say('Berichten', 'Messages', lang) + '</h2>'
+    + off
+    + '<p class="note">' + say(
+      'De laatste ' + HISTORY_LENGTH + ' dagen. Punten volgen wat je die dag werkelijk gebruikte.',
+      'The last ' + HISTORY_LENGTH + ' days. Points follow what you actually used that day.', lang)
+    + '</p><ul class="notices">' + items + '</ul>';
+}
+
+function renderInfo(app, state, lang) {
+  const sections = INFO_SECTIONS.map((section) => {
+    const copy = section[lang] || section.nl;
+    return card(copy.title, '<p>' + copy.lead + '</p>'
+      + '<ul>' + copy.points.map((p) => '<li>' + p + '</li>').join('') + '</ul>');
+  }).join('');
+
+  return '<h2>' + say('Over ' + BRAND.name, 'About ' + BRAND.name, lang) + '</h2>'
+    + '<p class="note">' + say(
+      'Waar deze app voor is, en waarvoor niet.',
+      'What this app is for, and what it is not.', lang)
+    + '</p>'
+    + sections
+    + card(say('Stand van zaken', 'Where this stands', lang),
+        statRow(say('Echte metergegevens', 'Real meter data', lang), say('nog niet', 'not yet', lang))
+        + statRow(say('Getest met huurders', 'Tested with tenants', lang), say('nog niet', 'not yet', lang))
+        + statRow(say('Alle bedragen', 'All amounts', lang), say('voorbeeld', 'example', lang)));
+}
+
+// ---- js/screens/levels.js ----
+/**
+ * The growth ladder: every stage of the tree, side by side.
+ *
+ * The demonstrator brief lists "Goals" as a drawer entry (Report 5's levels
+ * and rewards overview) and it was the last one missing. It also answers the
+ * obvious question the home screen raises and never resolves - what does the
+ * tree actually turn into? - which no single-stage mascot can show.
+ *
+ * Reached stages are drawn in full colour, the rest greyed but still visible:
+ * hiding them would remove the thing the whole ladder is for.
+ *
+ * Pure function of (app, state, lang), like every other screen.
+ */
+
+
+
+
+
+function renderLevels(app, state, lang) {
+  const reachedLevel = app.stage.level;
+
+  const rungs = LEVELS.map((rung) => {
+    const reached = rung.level <= reachedLevel;
+    const current = rung.level === reachedLevel;
+    const name = rung[lang] || rung.nl;
+
+    const status = current
+      ? say('Hier sta je nu', 'You are here now', lang)
+      : reached
+        ? say('Gehaald', 'Reached', lang)
+        : say('Vanaf ' + euro(rung.threshold), 'From ' + euro(rung.threshold), lang);
+
+    return '<li class="rung' + (reached ? ' reached' : '') + (current ? ' current' : '') + '"'
+      + ' data-level="' + rung.level + '">'
+      + treeSvg(rung.level, name, { health: 'healthy' })
+      + '<div class="rung-text">'
+      + '<strong>' + rung.level + '. ' + name + '</strong>'
+      + '<span class="rung-status">' + status + '</span>'
+      + '</div></li>';
+  }).join('');
+
+  // Each rung costs more than the one before it, which is the point: the first
+  // stage should arrive quickly and the last should feel earned.
+  const gaps = LEVELS.slice(1).map((rung, i) =>
+    Math.round((rung.threshold - LEVELS[i].threshold) * 100) / 100);
+
+  return '<h2>' + say('Je boom', 'Your tree', lang) + '</h2>'
+    + '<p class="note">' + say(
+      'Zes stappen. Elke stap kost meer dan de vorige, dus de eerste gaat snel en de laatste voelt verdiend.',
+      'Six stages. Each one costs more than the last, so the first arrives quickly and the last feels earned.', lang)
+    + '</p>'
+    + '<ol class="ladder">' + rungs + '</ol>'
+    + card(say('Wat je al hebt', 'What you have so far', lang),
+        '<p>' + say(
+          'Je bespaarde ' + euro(app.cumulative) + '. Daarmee sta je op niveau ' + reachedLevel + '.',
+          'You have saved ' + euro(app.cumulative) + ', which puts you at level ' + reachedLevel + '.', lang)
+        + '</p><p class="note">' + say(
+          'Je boom zakt nooit terug. Een slechte week laat hem hangen, maar je raakt een stap nooit kwijt.',
+          'Your tree never drops back. A bad week makes it droop, but you never lose a stage.', lang)
+        + '</p>')
+    + card(say('Schildjes', 'Shields', lang),
+        '<p>' + say(
+          'Je hebt ' + shieldsEarned(reachedLevel) + ' schildje(s). Een schildje vangt een dag op waarop het niet lukte, zodat je reeks niet meteen breekt.',
+          'You have ' + shieldsEarned(reachedLevel) + ' shield(s). A shield absorbs a day that did not go well, so your streak does not break straight away.', lang)
+        + '</p>')
+    + card(say('Waarom hier', 'Why here', lang),
+        '<p class="note">' + say(
+          'De laatste stap ligt op ' + euro(LEVELS.at(-1).threshold) + ' per jaar, onder de ' + euro(ANNUAL_CEILING_EUR)
+            + ' die als realistisch jaarbedrag geldt. De stappen ertussen lopen op met '
+            + gaps.map((g) => euro(g)).join(', ') + '.',
+          'The last stage sits at ' + euro(LEVELS.at(-1).threshold) + ' a year, below the ' + euro(ANNUAL_CEILING_EUR)
+            + ' considered a realistic annual figure. The steps between it rise by '
+            + gaps.map((g) => euro(g)).join(', ') + '.', lang)
+        + '</p>');
+}
+
+// ---- js/screens/tabs.js ----
+/**
+ * The five tab screens (spec section 12).
+ *
+ * Each render is a pure function of (app, state, lang) returning markup, so
+ * every screen is testable without a DOM. Navigation lives in main.js.
+ *
+ * No screen computes euros. Every figure comes from engine/savings.js, which
+ * handover decision D4 makes the single source of truth.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const pct = (x) => Math.round(x * 100);
+
+function renderHome(app, state, lang) {
+  const { stage, progress, cumulative, floorDays, readings, rawNet, units, health } = app;
+  const withheld = comfortIntervention(floorDays, readings.length, lang);
+  const stageName = stage[lang] || stage.nl;
+  const topTip = rankedTips()[0];
+
+  // Euro stays visually dominant (Report 6's survey: 69.6% preferred euros);
+  // kWh and m3 sit underneath, smaller, per the demonstrator brief.
+  const physical = '<p class="figure-units">' + say('dat is ', 'that is ', lang)
+    + formatNumber(units.elec_kwh, 0) + ' kWh ' + say('en', 'and', lang) + ' '
+    + formatNumber(units.gas_m3, 0) + ' m3 ' + say('minder', 'less', lang) + '</p>';
+
+  // Tip copy is points-denominated, not euro. Confirmed 2026-08-10: points
+  // avoid the EUR 0,90-vs-EUR 0,14 contradiction between Reports 3 and 5.
+  const tipCard = '<button class="tip-card" data-open="tips">'
+    + '<span class="tip-kicker">' + say('Tip van vandaag', 'Today’s tip', lang) + '</span>'
+    + '<span class="tip-title">' + topTip[lang].title + '</span>'
+    + '<span class="tip-points">+' + toPoints(topTip.euroPerYear / 365) + ' '
+    + say('punten per dag', 'points a day', lang) + '</span></button>';
+
+  const bar = progress.next
+    ? progressBar(progress.fraction, say(
+        'Nog ' + euro(progress.euroToNext) + ' tot ' + progress.next.nl,
+        euro(progress.euroToNext) + ' to go until ' + progress.next.en, lang))
+    : '<p>' + say('Je boom is volgroeid.', 'Your tree is fully grown.', lang) + '</p>';
+
+  const healthNote = healthMessage(health, lang);
+
+  return treeSvg(stage.level, stageName, { health: health.state, season: app.season })
+    + '<p class="tree-name">' + state.treeName + '</p>'
+    + '<p class="figure">' + euro(cumulative) + '</p>'
+    + physical
+    // Tappable: the home screen shows one stage of the tree and never answers
+    // the obvious question of what it grows into. This opens the full ladder.
+    + '<p><button class="stage" data-open="levels">' + say('Niveau', 'Level', lang) + ' ' + stage.level
+    + ' &middot; ' + stageName + ' &rsaquo;</button></p>'
+    + bar
+    + tipCard
+    + (healthNote ? card(say('Je boom', 'Your tree', lang), '<p>' + healthNote + '</p>', 'warn') : '')
+    + (withheld ? card(say('Warmte telt niet mee', 'Warmth does not count', lang),
+        '<p>' + withheld + '</p>', 'warn') : '')
+    + card(say('Wat je gebruikte', 'What you used', lang),
+        statRow(say('Minder dan verwacht', 'Less than expected', lang), euro(rawNet),
+          say('over de laatste ' + readings.length + ' dagen',
+              'over the last ' + readings.length + ' days', lang)));
+}
+
+function renderSavings(app, state, lang) {
+  const { readings, expectedSeries, floorDays } = app;
+
+  // Monthly / seasonal / yearly, per the brief. The yearly figure is a
+  // projection from measured days, and has to say so on screen: presenting an
+  // extrapolation as a measurement is the exact failure the handover flags.
+  const period = periodTotals(expectedSeries, readings, state.period);
+  const chips = PERIODS.map((p) =>
+    '<button class="chip' + (p.id === state.period ? ' on' : '') + '" data-period="' + p.id + '">'
+    + (p[lang] || p.nl) + '</button>').join('');
+
+  const scope = period.measured
+    ? say('over ' + period.days + ' gemeten dagen', 'over ' + period.days + ' measured days', lang)
+    : say('geschat, niet gemeten', 'estimated, not measured', lang);
+
+  // A projection above the headline the reports themselves publish is the
+  // failure the handover flags. Say it on the screen rather than hoping the
+  // presenter notices.
+  const overCeiling = !period.measured && period.net > ANNUAL_CEILING_EUR
+    ? '<p>' + say(
+        'Let op: dit ligt boven de ' + euro(ANNUAL_CEILING_EUR)
+          + ' per jaar die rapport 4 als richtbedrag noemt. Dit huishouden bespaart in de simulatie bewust veel; een gemiddelde huurder komt lager uit.',
+        'Note: this sits above the ' + euro(ANNUAL_CEILING_EUR)
+          + ' a year report 4 gives as its headline. This simulated household saves deliberately hard; an average tenant lands lower.', lang)
+      + '</p>' : '';
+
+  const projection = period.measured ? '' : card(
+    say('Dit is een schatting', 'This is an estimate', lang),
+    '<p>' + say(
+      'Doorgerekend vanaf ' + period.basedOnDays + ' gemeten dagen, over '
+        + HEATING_DAYS_PER_YEAR + ' stookdagen per jaar. Buiten het stookseizoen valt er nauwelijks op verwarming te besparen, dus die dagen tellen hier niet mee.',
+      'Scaled up from ' + period.basedOnDays + ' measured days across '
+        + HEATING_DAYS_PER_YEAR + ' heating days a year. Outside the heating season there is barely any heating to save on, so those days are not counted here.', lang)
+    + '</p>' + overCeiling, 'warn');
+
+  const totals = '<div class="name-choices">' + chips + '</div>'
+    + statRow(say('Minder gebruikt dan verwacht', 'Used less than expected', lang),
+        euro(period.net), scope)
+    + statRow(say('Telt mee voor je boom', 'Counts towards your tree', lang), euro(period.credited),
+        say(floorDays + ' dagen telden niet mee', floorDays + ' days did not count', lang));
+
+  const chartNote = say(
+    'De band laat zien hoe zeker de verwachting is. Ligt je lijn eronder, dan gebruikte je echt minder dan het weer verklaart.',
+    'The band shows how certain the expectation is. If your line sits below it, you genuinely used less than the weather explains.', lang);
+
+  const fixed = say(
+    'Ongeveer ' + pct(FIXED_COST_SHARE) + '% van je rekening is vastrecht en belasting. Daar verandert je gedrag niets aan. Alles hierboven gaat alleen over het deel dat je wel kunt beinvloeden.',
+    'About ' + pct(FIXED_COST_SHARE) + '% of your bill is standing charges and tax. Your behaviour cannot change that. Everything above is only about the part you can influence.', lang);
+
+  return '<h2>' + say('Besparing', 'Savings', lang) + '</h2>'
+    + card('', totals)
+    + projection
+    + card(say('Jouw verbruik tegenover de verwachting', 'Your use against the expectation', lang),
+        consumptionChart(readings, expectedSeries, lang) + '<p class="note">' + chartNote + '</p>')
+    + card(say('Wat je niet kunt veranderen', 'What you cannot change', lang), '<p>' + fixed + '</p>');
+}
+
+function renderChallenges(app, state, lang) {
+  const intro = say(
+    'Sommige uitdagingen ziet je meter zelf. Andere niet; die vink je zelf af. We zeggen er altijd bij welke.',
+    'Your meter can see some challenges by itself. Others it cannot; those you tick off yourself. We always say which.', lang);
+
+  const chips = CHALLENGE_FILTERS.map((f) =>
+    '<button class="chip' + (f.id === state.challengeFilter ? ' on' : '') + '" data-challenge="' + f.id + '">'
+    + (f[lang] || f.nl) + '</button>').join('');
+
+  const shown = CHALLENGES.filter((c) => c.status === state.challengeFilter);
+
+  const items = shown.length
+    ? shown.map((c) => card(c[lang].title,
+        '<p>' + c[lang].body + '</p>'
+        + '<p class="badge ' + c.verification + '">' + verificationLabel(c.verification, lang) + '</p>'
+        + '<p class="note">' + c.days + ' ' + say('dagen', 'days', lang) + '</p>')).join('')
+    : '<p class="note">' + say('Hier staat nog niets.', 'Nothing here yet.', lang) + '</p>';
+
+  return '<h2>' + say('Uitdagingen', 'Challenges', lang) + '</h2>'
+    + '<div class="name-choices">' + chips + '</div>'
+    + '<p class="note">' + intro + '</p>' + items;
+}
+
+function renderTips(app, state, lang) {
+  const intro = say(
+    'Op volgorde van wat het meeste oplevert. Je kunt ze niet optellen: alles tegelijk doen levert niet de som op.',
+    'Ordered by what saves most. They do not add up: doing everything at once does not save the total.', lang);
+
+  const items = rankedTips().map((t) => card(t[lang].title,
+    '<p class="tip-euro">' + euro(t.euroPerYear) + ' ' + say('per jaar', 'a year', lang) + '</p>'
+    + '<p>' + t[lang].body + '</p>'
+    + '<p class="note">' + say('Gerekend met', 'Based on', lang) + ': ' + t[lang].basis + '</p>')).join('');
+
+  // Tips history, per the brief: tapping the tip card on the dashboard has to
+  // lead somewhere that shows which tip was given on which day.
+  const history = notificationHistory(app.readings, app.netByDay).map((entry) =>
+    '<li class="notice"><span class="notice-date">' + entry.date + '</span>'
+    + '<span class="notice-body">' + entry.tip[lang].title + '</span></li>').join('');
+
+  return '<h2>Tips</h2><p class="note">' + intro + '</p>' + items
+    + card(say('Wat je eerder kreeg', 'What you were shown before', lang),
+        '<ul class="notices">' + history + '</ul>');
+}
+
+function renderProfile(app, state, lang) {
+  const consent = CONSENT_ITEMS.map((item) =>
+    '<label class="consent-row"><input type="checkbox" data-consent="' + item.key + '"'
+    + (hasConsent(state, item.key) ? ' checked' : '') + '><span>'
+    + (item[lang] || item.nl) + '</span></label>').join('');
+
+  const help = HELP_TOPICS.map((t) =>
+    '<details class="help"><summary>' + t[lang].q + '</summary><p>' + t[lang].a + '</p></details>').join('');
+
+  const modelNote = say(
+    'Een basisverbruik plus een stooklijn: hoe kouder het is, hoe meer gas verwacht wordt. Het model leert van de eerste '
+      + BASELINE_DAYS + ' dagen en wordt pas daarna gemeten, want anders komt er per definitie nul uit. Stookgrens '
+      + T_BASE_C + ' graden. De vorm volgt Grillone e.a. (2021); dit is nadrukkelijk nog niet het Bayesiaanse model uit rapport 3.',
+    'A baseload plus a heating slope: the colder it is, the more gas is expected. The model learns from the first '
+      + BASELINE_DAYS + ' days and is only measured after that, because otherwise the answer is zero by construction. Balance point '
+      + T_BASE_C + ' degrees. The form follows Grillone et al. (2021); this is explicitly not yet the Bayesian model from report 3.', lang);
+
+  const floorNote = say(
+    'Onder ' + pct(COMFORT_FLOOR_RATIO) + '% van wat verwacht wordt, tellen besparingen niet mee. Deze grens is een voorlopige waarde.',
+    'Below ' + pct(COMFORT_FLOOR_RATIO) + '% of what is expected, savings do not count. This threshold is a provisional value.', lang);
+
+  return '<h2>' + say('Profiel', 'Profile', lang) + '</h2>'
+    + card(say('Je woning', 'Your home', lang),
+        statRow(say('Oppervlak', 'Floor area', lang), state.home.floorAreaM2 + ' m2')
+        + statRow(say('Bewoners', 'Residents', lang), String(state.home.occupants))
+        + statRow(say('Energielabel', 'Energy label', lang), HOUSEHOLD.energyLabel))
+    + card(say('Wat je deelt', 'What you share', lang),
+        '<div class="consent">' + consent + '</div><p class="reassure">'
+        + say('Je kunt elk onderdeel uitzetten wanneer je wilt. De app blijft werken.',
+              'You can switch off any item whenever you like. The app keeps working.', lang) + '</p>')
+    + card(say('De naam van je boom', 'Your tree’s name', lang),
+        '<p class="note">' + say(
+          'Je boom heet nu ' + state.treeName + '. Kies een andere naam of typ er zelf een.',
+          'Your tree is called ' + state.treeName + '. Pick another name or type your own.', lang) + '</p>'
+        + '<div class="name-choices">'
+        + ['Groenje', 'Bram', 'Hoop', 'Takkie', 'Eik'].map((n) =>
+            '<button class="chip' + (n === state.treeName ? ' on' : '') + '" data-name="' + n + '">'
+            + n + '</button>').join('')
+        + '</div>'
+        + '<label class="field"><span>' + say('Eigen naam', 'Your own name', lang) + '</span>'
+        + '<input type="text" data-name-input maxlength="16" value="' + state.treeName + '"></label>')
+    + card(say('Versiering', 'Decoration', lang),
+        '<div class="name-choices">'
+        + ['auto'].concat(SEASON_NAMES).map((s) =>
+            '<button class="chip' + (s === state.season ? ' on' : '') + '" data-season="' + s + '">'
+            + s + '</button>').join('')
+        + '</div><p class="note">' + say(
+          'Alleen voor de sier. Het verandert niets aan je besparing of je niveau.',
+          'Decoration only. It changes nothing about your saving or your level.', lang) + '</p>')
+    + card(say('Taal', 'Language', lang),
+        '<div class="actions"><button class="btn ghost" data-lang="nl">Nederlands</button>'
+        + '<button class="btn ghost" data-lang="en">English</button></div>')
+    // Watt's introduction runs once on first open. It has to stay reachable
+    // afterwards: the original brief asks for an assistant you can go back to
+    // for "where do I find what", and a one-shot tour is not that.
+    + card(say('Vragen aan ', 'Ask ', lang) + BRAND.assistant.name,
+        '<div class="watt-inline">' + batterySvg('happy')
+        + '<p>' + say(
+          BRAND.assistant.name + ' legt de app opnieuw uit als je dat wilt.',
+          BRAND.assistant.name + ' will walk you through the app again whenever you like.', lang)
+        + '</p></div>'
+        + '<div class="actions"><button class="btn ghost" data-replay-tour>'
+        + say('Laat de uitleg opnieuw zien', 'Show the walkthrough again', lang)
+        + '</button></div>' + help)
+    + card(say('Over deze cijfers', 'About these figures', lang),
+        '<p>' + say(
+          'Er is nog geen echte data van je slimme meter. Alles wat je ziet is nagebootst, zodat je kunt zien hoe de app werkt.',
+          'There is no real data from your smart meter yet. Everything you see is simulated, so you can see how the app works.', lang) + '</p>'
+        + '<h4>' + say('Hoe de verwachting wordt berekend', 'How the expectation is calculated', lang) + '</h4>'
+        + '<p class="note">' + modelNote + '</p>'
+        + '<h4>' + say('Gerekende prijzen', 'Prices used', lang) + '</h4>'
+        + '<p class="note">' + say('Gas', 'Gas', lang) + ': ' + euro(PRICE_GAS_EUR_PER_M3) + '/m3. '
+        + say('Stroom', 'Electricity', lang) + ': ' + euro(PRICE_ELEC_EUR_PER_KWH) + '/kWh &mdash; <strong>'
+        + say('nog niet bevestigd', 'not yet confirmed', lang) + '</strong>.</p>'
+        + '<h4>' + say('Ondergrens voor comfort', 'Comfort floor', lang) + '</h4>'
+        + '<p class="note">' + floorNote + '</p>');
+}
+
+const TABS = Object.freeze([
+  Object.freeze({ id: 'home', icon: '\u{1F333}', nl: 'Start', en: 'Home', render: renderHome }),
+  Object.freeze({ id: 'savings', icon: '\u{1F4B6}', nl: 'Besparing', en: 'Savings', render: renderSavings }),
+  Object.freeze({ id: 'challenges', icon: '\u{1F3AF}', nl: 'Uitdagingen', en: 'Challenges', render: renderChallenges }),
+  Object.freeze({ id: 'tips', icon: '\u{1F4A1}', nl: 'Tips', en: 'Tips', render: renderTips }),
+  Object.freeze({ id: 'levels', icon: '\u{1F331}', nl: 'Doelen', en: 'Goals', render: renderLevels }),
+  Object.freeze({ id: 'profile', icon: '\u{1F464}', nl: 'Profiel', en: 'Profile', render: renderProfile }),
+  // The remaining drawer entries the brief lists (section 3).
+  Object.freeze({ id: 'settings', icon: '\u{2699}', nl: 'Instellingen', en: 'Settings', render: renderSettings }),
+  Object.freeze({ id: 'notifications', icon: '\u{1F514}', nl: 'Berichten', en: 'Messages', render: renderNotifications }),
+  Object.freeze({ id: 'info', icon: '\u{2139}', nl: 'Info', en: 'Info', render: renderInfo }),
+]);
+
+// ---- js/screens/tour.js ----
+/**
+ * The in-app guided tour.
+ *
+ * The tenant lands on the working app straight away; Watt then speaks from a
+ * bubble anchored to each part of the screen in turn. This replaces the old
+ * full-screen introduction, which put six pages of reading in front of an app
+ * nobody had seen yet.
+ *
+ * The app underneath stays visible and is never covered, only dimmed, so the
+ * thing being described is always in view.
+ */
+
+
+const TOUR_LABELS = {
+  next: { nl: 'Verder', en: 'Next' },
+  done: { nl: 'Ik snap het', en: 'Got it' },
+  skip: { nl: 'Sla uitleg over', en: 'Skip the tour' },
+  counter: { nl: '{n} van {total}', en: '{n} of {total}' },
+};
+const tourLabel = (key, lang) => TOUR_LABELS[key][lang] || TOUR_LABELS[key].nl;
+
+/** Places the bubble near its anchor, keeping it fully on screen. */
+function position(bubble, anchorEl, stage) {
+  const pad = 12;
+  const box = stage.getBoundingClientRect();
+
+  if (!anchorEl) {
+    bubble.style.top = (box.height / 2 - bubble.offsetHeight / 2) + 'px';
+    bubble.style.left = pad + 'px';
+    return;
+  }
+
+  const a = anchorEl.getBoundingClientRect();
+  const below = a.bottom - box.top + pad;
+  const above = a.top - box.top - bubble.offsetHeight - pad;
+  // Prefer below the anchor; flip above when there is not enough room.
+  const top = below + bubble.offsetHeight < box.height ? below : Math.max(pad, above);
+  bubble.style.top = top + 'px';
+  bubble.style.left = pad + 'px';
+}
+
+/** Draws a ring around the element being described. */
+function highlight(ring, anchorEl, stage) {
+  if (!anchorEl) { ring.style.display = 'none'; return; }
+  const box = stage.getBoundingClientRect();
+  const a = anchorEl.getBoundingClientRect();
+  ring.style.display = 'block';
+  ring.style.top = (a.top - box.top - 6) + 'px';
+  ring.style.left = (a.left - box.left - 6) + 'px';
+  ring.style.width = (a.width + 12) + 'px';
+  ring.style.height = (a.height + 12) + 'px';
+}
+
+/**
+ * Runs the tour inside `stage` (the phone frame).
+ * `onDone` fires whether the tenant finishes or skips - skipping is not a
+ * failure state and must never be treated as one.
+ */
+function mountTour(stage, lang, onDone, controls = {}) {
+  const { onScreen, onDrawer } = controls;
+  let index = 0;
+  let shownScreen = null;
+
+  const layer = document.createElement('div');
+  layer.className = 'tour-layer';
+  layer.innerHTML = '<div class="tour-dim"></div><div class="tour-ring"></div>'
+    + '<div class="tour-bubble" role="dialog" aria-live="polite"></div>';
+  stage.appendChild(layer);
+
+  const ring = layer.querySelector('.tour-ring');
+  const bubble = layer.querySelector('.tour-bubble');
+
+  function finish() {
+    layer.remove();
+    // Never leave someone stranded on whichever tab they skipped from, or
+    // staring at a drawer the tour opened for them.
+    if (onDrawer) onDrawer(false);
+    if (onScreen && shownScreen !== 'home') onScreen('home');
+    onDone();
+  }
+
+  function draw() {
+    const step = tourStep(index);
+    const isLast = index === TOTAL_TOUR_STEPS - 1;
+
+    // Open the screen this step is about, before measuring anything on it.
+    // The tour layer hangs off the phone rather than the screen, so switching
+    // tabs underneath it does not disturb the bubble.
+    if (onScreen && step.screen && step.screen !== shownScreen) {
+      onScreen(step.screen);
+      shownScreen = step.screen;
+    }
+    // After the screen, never before: opening a tab closes the drawer.
+    if (onDrawer) onDrawer(step.drawer === true);
+    const counter = tourLabel('counter', lang)
+      .replace('{n}', index + 1).replace('{total}', TOTAL_TOUR_STEPS);
+
+    bubble.innerHTML =
+      '<div class="tour-watt">' + batterySvg(index === 0 ? 'happy' : 'thinking') + '</div>'
+      + '<div class="tour-speech">'
+      + '<p class="tour-title">' + step[lang].title + '</p>'
+      + '<p class="tour-body">' + step[lang].body + '</p>'
+      + '<div class="tour-actions">'
+      + '<button class="btn" data-tour="next">' + (isLast ? tourLabel('done', lang) : tourLabel('next', lang)) + '</button>'
+      + '</div>'
+      + '<button class="tour-skip" data-tour="skip">' + tourLabel('skip', lang) + '</button>'
+      + '<p class="tour-counter">' + counter + '</p>'
+      + '</div>';
+
+    const anchorEl = step.anchor ? stage.querySelector(step.anchor) : null;
+    highlight(ring, anchorEl, stage);
+    position(bubble, anchorEl, stage);
+  }
+
+  layer.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-tour]')?.dataset.tour;
+    if (!action) return;
+    if (action === 'skip') { finish(); return; }
+    if (index >= TOTAL_TOUR_STEPS - 1) { finish(); return; }
+    index += 1;
+    draw();
+  });
+
+  draw();
+  return { close: finish, name: ASSISTANT_NAME };
+}
+
+// ---- js/main.js ----
+/**
+ * Application bootstrap and tab router.
+ *
+ * Composes the engine over the simulated history, then renders whichever tab
+ * is active. First open goes through Watt's introduction instead, which is
+ * also the only place consent is given.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+function boot(profileId) {
+  // The model learns from the baseline window and is measured only on the
+  // report window after it. Fitting and measuring the same days would force
+  // the net saving to exactly zero. See BASELINE_DAYS in engine/model.js.
+  const { baseline, report } = splitBaseline(generateHistory(profileId));
+  const model = fitModel(baseline);
+  const expectedSeries = report.map((r) => expectedFor(model, r));
+
+  const cumulative = treeProgress(expectedSeries, report);
+  // Per-day net, kept so the notification and tip history can report what each
+  // day actually did rather than repeating the running total.
+  const netByDay = report.map((r, i) => netSaving(expectedSeries[i], r));
+  const rawNet = netByDay.reduce((sum, n) => sum + n, 0);
+  const floorDays = report.filter(
+    (r, i) => isBelowComfortFloor(expectedSeries[i].gas_m3, r.gas_m3)
+  ).length;
+
+  return {
+    model, readings: report, expectedSeries, cumulative, rawNet, netByDay, floorDays,
+    units: cumulativeUnits(expectedSeries, report),
+    stage: stageFor(cumulative), progress: progressToNext(cumulative),
+    health: treeHealth(
+      report.map((r, i) => ({
+        net: netSaving(expectedSeries[i], r),
+        belowFloor: isBelowComfortFloor(expectedSeries[i].gas_m3, r.gas_m3),
+      })),
+      shieldsEarned(stageFor(cumulative).level)
+    ),
+  };
+}
+
+/**
+ * Left drawer, opened from the hamburger. The demonstrator brief specifies a
+ * drawer rather than the bottom tab bar Report 6 originally designed.
+ *
+ * Every entry keeps its text label - no icon-only navigation for a 50+ group
+ * with limited digital confidence.
+ */
+function drawer(activeId, lang) {
+  const items = TABS.map((tab) =>
+    '<button class="drawer-item' + (tab.id === activeId ? ' active' : '') + '" data-tab="' + tab.id + '">'
+    + '<span class="drawer-icon" aria-hidden="true">' + tab.icon + '</span>'
+    + '<span>' + (tab[lang] || tab.nl) + '</span></button>').join('');
+
+  return '<div class="drawer-scrim" data-close="drawer"></div>'
+    + '<nav class="drawer" aria-label="' + (lang === 'en' ? 'Menu' : 'Hoofdmenu') + '">'
+    + '<button class="drawer-close" data-close="drawer" aria-label="'
+    + (lang === 'en' ? 'Close menu' : 'Menu sluiten') + '">&times;</button>'
+    + items + '</nav>';
+}
+
+/**
+ * NL/EN, in the header rather than only under Profile.
+ *
+ * Dutch is the product language, but the demonstrator is also read by DACS and
+ * examiners, and the first screen anyone sees is the consent journey - which
+ * sits in front of the Profile screen where the other toggle lives. Without
+ * this, an English reader has no way out of Dutch until registration is done.
+ */
+function languageSwitch(lang) {
+  return '<div class="lang-switch">'
+    + '<button class="chip' + (lang === 'nl' ? ' on' : '') + '" data-lang="nl"'
+    + ' aria-label="Nederlands"' + (lang === 'nl' ? ' aria-current="true"' : '') + '>NL</button>'
+    + '<button class="chip' + (lang === 'en' ? ' on' : '') + '" data-lang="en"'
+    + ' aria-label="English"' + (lang === 'en' ? ' aria-current="true"' : '') + '>EN</button>'
+    + '</div>';
+}
+
+function header(title, lang) {
+  return '<button class="menu-button" data-open="drawer" aria-label="'
+    + (lang === 'en' ? 'Open menu' : 'Menu openen') + '">'
+    + '<span></span><span></span><span></span></button>'
+    + '<span class="header-title">' + title + '</span>'
+    + languageSwitch(lang);
+}
+
+/** The header before the app proper takes over: no drawer to open yet. */
+function accessHeader(lang) {
+  return '<span class="header-title brand">' + BRAND.name + '</span>' + languageSwitch(lang);
+}
+
+function footerNote(app, lang) {
+  const last = app.readings.at(-1).date;
+  return '<p class="illustrative">'
+    + (lang === 'en'
+      ? 'Last reading ' + last + ' &mdash; data runs one day behind. All amounts are example values; there is no real P4 data yet.'
+      : 'Laatste meting ' + last + ' &mdash; gegevens lopen een dag achter. Alle bedragen zijn voorbeeldwaarden; er is nog geen echte P4-data.')
+    + '</p>';
+}
+
+/**
+ * Mounts the phone app.
+ *
+ * `store` is the single source of truth for state, shared with the access
+ * screens: the NL/EN switch in the header, the one on the Profile screen and
+ * the language question on the first onboarding step must never disagree, so
+ * none of them owns a copy.
+ *
+ * @param {object} store  { get(): state, set(next): void }
+ */
+function start(getApp, store) {
+  const phone = document.getElementById('phone');
+  const screen = document.getElementById('screen');
+  const nav = document.getElementById('nav');
+  const bar = document.getElementById('header');
+  let active = 'home';
+  let drawerOpen = false;
+
+  function effectiveSeason() {
+    const state = store.get();
+    if (state.season !== 'auto') return state.season;
+    // 'auto' follows the calendar of the simulated demo date.
+    const month = Number(getApp().readings.at(-1).date.slice(5, 7));
+    if (month === 12) return 'christmas';
+    if (month >= 6 && month <= 8) return 'summer';
+    return null;
+  }
+
+  /**
+   * Re-renders the active screen.
+   *
+   * Scroll position is kept unless the screen itself changed: ticking a
+   * consent box or renaming the tree re-renders the whole screen, and jumping
+   * back to the top each time would lose the reader's place mid-list.
+   */
+  function draw(resetScroll = false) {
+    const state = store.get();
+    const app = getApp();
+    const offset = screen.scrollTop;
+    // Larger text is a real setting, not a label: Report 6 validated 20px as
+    // the default, and this is the way up from it for anyone who needs it.
+    phone.dataset.large = state.largeText === true ? 'true' : 'false';
+    app.season = effectiveSeason();
+    const tab = TABS.find((t) => t.id === active);
+    bar.innerHTML = header(tab[state.language] || tab.nl, state.language);
+    screen.innerHTML = tab.render(app, state, state.language) + footerNote(app, state.language);
+    nav.innerHTML = drawerOpen ? drawer(active, state.language) : '';
+    screen.scrollTop = resetScroll ? 0 : offset;
+  }
+
+  function go(id) { active = id; drawerOpen = false; draw(true); }
+
+  /** Opens or closes the drawer. Used by the tour to show the whole menu. */
+  function setDrawer(open) {
+    if (drawerOpen === open) return;
+    drawerOpen = open;
+    draw();
+  }
+
+  phone.addEventListener('click', (event) => {
+    if (event.target.closest('[data-open="drawer"]')) { drawerOpen = true; draw(); return; }
+    if (event.target.closest('[data-close="drawer"]')) { drawerOpen = false; draw(); return; }
+
+    // Watt, on demand. His steps are anchored to elements on the home screen,
+    // so go there first - replaying from Profile would point at nothing.
+    if (event.target.closest('[data-replay-tour]')) {
+      if (phone.querySelector('.tour-layer')) return;
+      go('home');
+      mountTour(phone, store.get().language,
+        () => store.set({ ...store.get(), tourDone: true }),
+        { onScreen: go, onDrawer: setDrawer });
+      return;
+    }
+
+
+    const tab = event.target.closest('[data-tab]')?.dataset.tab;
+    if (tab) { go(tab); return; }
+
+    // Cards on the dashboard open their detail screen (brief, Act 5).
+    const open = event.target.closest('[data-open]')?.dataset.open;
+    if (open && open !== 'drawer') go(open);
+  });
+
+  // Consent can be withdrawn from Profile at any time, and the app keeps
+  // working afterwards (handover Q10).
+  screen.addEventListener('change', (event) => {
+    const key = event.target.dataset?.consent;
+    if (!key) return;
+    store.set(setConsent(store.get(), key, event.target.checked));
+  });
+
+  screen.addEventListener('click', (event) => {
+    const lang = event.target.closest('[data-lang]')?.dataset.lang;
+    if (lang) { store.set({ ...store.get(), language: lang }); return; }
+
+    const name = event.target.closest('[data-name]')?.dataset.name;
+    if (name) { store.set({ ...store.get(), treeName: name }); return; }
+
+    const season = event.target.closest('[data-season]')?.dataset.season;
+    if (season) { store.set({ ...store.get(), season }); return; }
+
+    const period = event.target.closest('[data-period]')?.dataset.period;
+    if (period) { store.set({ ...store.get(), period }); return; }
+
+    const filter = event.target.closest('[data-challenge]')?.dataset.challenge;
+    if (filter) store.set({ ...store.get(), challengeFilter: filter });
+    // [data-open] is handled by the phone listener above, which this bubbles to.
+  });
+
+  screen.addEventListener('change', (event) => {
+    const setting = event.target.dataset?.setting;
+    if (!setting) return;
+    store.set({ ...store.get(), [setting]: event.target.checked });
+  });
+
+  // Free-text renaming, alongside the tappable suggestions: the tree-mascot
+  // report asks for both, because typing is more effortful for this group.
+  screen.addEventListener('change', (event) => {
+    if (!('nameInput' in (event.target.dataset || {}))) return;
+    const value = event.target.value.trim();
+    if (!value) return;
+    store.set({ ...store.get(), treeName: value });
+  });
+
+  draw(true);
+  return { draw, go, setDrawer };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const screen = document.getElementById('screen');
+  try {
+    let state = load(window.localStorage);
+    // Read through a getter downstream, so the household the demo runs on can
+    // be swapped without re-registering a single listener.
+    const app = boot(state.profile);
+    let appView = null;
+    let accessView = null;
+    const headerBar = document.getElementById('header');
+
+    const store = {
+      get: () => state,
+      set: (next) => {
+        state = next;
+        save(window.localStorage, state);
+        // Before registration finishes there is no appView, and the access
+        // screens own the phone. Either way something must redraw, or the
+        // language switch would change nothing on screen.
+        if (appView) appView.draw();
+        else { headerBar.innerHTML = accessHeader(state.language); accessView?.redraw(); }
+      },
+    };
+
+    // On the header itself, so it survives every redraw of its contents and
+    // works on the access screens, which have no drawer.
+    headerBar.addEventListener('click', (event) => {
+      const lang = event.target.closest('[data-lang]')?.dataset.lang;
+      if (lang && lang !== state.language) store.set({ ...state, language: lang });
+    });
+
+    // The brief's screen order: registration - which is where the consent
+    // journey lives - or login for a returning tenant, then the demo-only role
+    // selector, then the app. The access screens have no tab of their own, so
+    // the header carries the product name until the app proper takes over.
+    headerBar.innerHTML = accessHeader(state.language);
+
+    accessView = mountAccess(screen, {
+      store,
+      onDone: () => {
+        accessView = null;
+        appView = start(() => app, store);
+        // Watt explains the app in place, over the working screen, rather than
+        // in a wall of introduction pages in front of it. He runs every time
+        // rather than only on first open: this is a demonstrator, and whoever
+        // is being shown it has not seen the introduction before.
+        mountTour(document.getElementById('phone'), store.get().language,
+          () => store.set({ ...store.get(), tourDone: true }),
+          { onScreen: appView.go, onDrawer: appView.setDrawer });
+      },
+    });
+  } catch (error) {
+    screen.textContent = 'Opstartfout: ' + error.message;
+    throw error;
+  }
+});
+
+console.info(BRAND.name + ' demo date: ' + DEMO_TODAY);
+
+</script>
+</body>
+</html>
