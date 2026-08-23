@@ -52,6 +52,7 @@ body {
 }
 
 #screen { flex: 1; overflow-y: auto; padding: var(--gap); }
+#tabs { flex: none; }
 
 #boot-status {
   color: var(--green-900);
@@ -149,32 +150,37 @@ body {
 .help { border-top: 1px solid #cbd8ce; padding: 8px 0; }
 .help summary { cursor: pointer; min-height: 32px; font-size: 17px; }
 
-/* --- Header and hamburger --- */
-#header { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+/* --- Header --- */
+#header { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px;
           border-bottom: 1px solid #d3ddd6; background: var(--surface); flex: none; }
 .header-title { font-size: 19px; font-weight: 700; color: var(--green-900); }
-.menu-button { width: var(--tap-min); height: var(--tap-min); border: none; background: none;
-               cursor: pointer; display: flex; flex-direction: column; justify-content: center;
-               gap: 5px; padding: 0 10px; }
-.menu-button span { display: block; height: 3px; border-radius: 2px; background: var(--green-900); }
-.menu-button:focus-visible { outline: 3px solid var(--accent); }
 
-/* --- Left drawer --- */
+/* Watt's explanation of this screen, always in the same corner so it can be
+   found without looking for it. */
+.info-button { width: 36px; height: 36px; flex: none; cursor: pointer;
+               border: 2px solid var(--green-600); border-radius: 50%; background: transparent;
+               color: var(--green-600); font-size: 19px; font-weight: 700;
+               font-family: Georgia, "Times New Roman", serif; line-height: 1; }
+.info-button:hover { background: var(--green-100); }
+.info-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* --- Overlays: the info sheet, and the tour layer --- */
 #nav { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
 #nav:empty { display: none; }
-.drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.35); pointer-events: auto; }
-.drawer { position: absolute; top: 0; left: 0; bottom: 0; width: 74%; background: var(--surface);
-          box-shadow: 4px 0 24px rgba(0,0,0,.25); padding: 56px 0 12px; pointer-events: auto;
-          display: flex; flex-direction: column; }
-.drawer-close { position: absolute; top: 8px; right: 8px; width: var(--tap-min); height: var(--tap-min);
-                border: none; background: none; font-size: 30px; line-height: 1; cursor: pointer;
-                color: var(--green-900); }
-.drawer-item { display: flex; align-items: center; gap: 14px; min-height: var(--tap-min);
-               border: none; background: none; width: 100%; padding: 12px 18px; cursor: pointer;
-               font-size: 19px; text-align: left; color: var(--ink); }
-.drawer-item.active { background: var(--green-100); color: var(--green-900); font-weight: 700;
-                      box-shadow: inset 4px 0 0 var(--green-600); }
-.drawer-icon { font-size: 22px; }
+
+.sheet-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.4); pointer-events: auto; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 80%; overflow-y: auto;
+         background: var(--surface); border-radius: 22px 22px 0 0; padding: 16px 18px 24px;
+         box-shadow: 0 -8px 30px rgba(0,0,0,.28); pointer-events: auto; }
+.sheet-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.sheet-head h3 { margin: 0; font-size: 20px; color: var(--green-900); flex: 1; }
+.sheet-watt .watt-figure { width: 40px; height: 54px; }
+.sheet-close { width: var(--tap-min); height: var(--tap-min); border: none; background: none;
+               font-size: 30px; line-height: 1; cursor: pointer; color: var(--green-900); flex: none; }
+.sheet-item { padding: 10px 0; border-top: 1px solid #e2e6e3; }
+.sheet-item:first-of-type { border-top: none; }
+.sheet-item strong { display: block; font-size: 17px; color: var(--green-900); margin-bottom: 2px; }
+.sheet-item p { margin: 0; font-size: 16px; }
 
 /* --- Dashboard figures --- */
 .tree-name { text-align: center; font-size: 18px; font-weight: 700; color: var(--green-900);
@@ -307,6 +313,17 @@ body {
 button.stage { border: none; font-family: inherit; }
 button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset: 2px; }
 
+/* --- The four screens that are not on the bottom bar, listed in Profile --- */
+.more-links { display: flex; flex-direction: column; }
+.more-link { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+             min-height: var(--tap-min); padding: 10px 4px; cursor: pointer;
+             background: none; border: none; border-bottom: 1px solid #cbd8ce;
+             font-size: 18px; color: var(--ink); font-family: inherit; }
+.more-link:last-child { border-bottom: none; }
+.more-icon { font-size: 20px; line-height: 1; flex: none; }
+.more-chevron { margin-left: auto; font-size: 24px; color: var(--green-600); }
+.more-link:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+
 </style>
 </head>
 <body>
@@ -314,6 +331,7 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
   <div id="phone">
     <header id="header"></header>
     <main id="screen"><div id="boot-status">Laden&hellip;</div></main>
+    <footer id="tabs"></footer>
     <div id="nav"></div>
   </div>
 </div>
@@ -2004,23 +2022,11 @@ const TOUR_STEPS = Object.freeze([
           body: 'One thing you can do each day. Tap it to see earlier tips.' },
   }),
   Object.freeze({
-    id: 'menu', screen: 'home', anchor: '.menu-button',
-    nl: { title: 'Alles staat achter dit knopje',
-          body: 'Hier zit de rest van de app. Ik doe hem even voor je open.' },
-    en: { title: 'Everything sits behind this button',
-          body: 'The rest of the app is in here. Let me open it for you.' },
-  }),
-
-  // The whole menu at once, before walking it. Seeing the eight parts together
-  // is what makes the walk that follows read as a list rather than a maze -
-  // Report 6's users are older and less digitally confident, and a menu they
-  // never open is a menu that does not exist.
-  Object.freeze({
-    id: 'menu-lijst', screen: 'home', drawer: true, anchor: '.drawer',
-    nl: { title: 'Dit zijn alle onderdelen',
-          body: 'Acht in totaal. Ik loop ze nu kort met je langs, van boven naar beneden.' },
-    en: { title: 'These are all the parts',
-          body: 'Eight of them. I will run through them briefly now, from top to bottom.' },
+    id: 'balk', screen: 'home', anchor: '.tabbar',
+    nl: { title: 'Onderaan staan vijf knoppen',
+          body: 'Dat is de hele app. Ik loop ze nu kort met je langs, van links naar rechts.' },
+    en: { title: 'Five buttons along the bottom',
+          body: 'That is the whole app. I will run through them briefly now, left to right.' },
   }),
 
   // One short line each. The detail lives on the screens themselves.
@@ -2090,6 +2096,22 @@ const TOUR_STEPS = Object.freeze([
 ]);
 
 const TOTAL_TOUR_STEPS = TOUR_STEPS.length;
+
+/** Steps that describe the app rather than the tour itself. */
+const FRAMING_STEPS = Object.freeze(['welkom', 'klaar']);
+
+/**
+ * What Watt said about one screen, for the info button in its header.
+ *
+ * Deliberately the same steps the tour uses, not a second set of words: a
+ * tenant who skipped the introduction, or sat through it and is still unsure,
+ * should get exactly the explanation they missed rather than a paraphrase that
+ * has quietly drifted from it.
+ */
+function helpFor(screenId) {
+  return TOUR_STEPS.filter((step) =>
+    step.screen === screenId && !FRAMING_STEPS.includes(step.id));
+}
 
 /** The tour step at an index, clamped. */
 function tourStep(index) {
@@ -2985,6 +3007,20 @@ function renderProfile(app, state, lang) {
         + '</div><p class="note">' + say(
           'Alleen voor de sier. Het verandert niets aan je besparing of je niveau.',
           'Decoration only. It changes nothing about your saving or your level.', lang) + '</p>')
+    // The bottom bar holds five buttons; these four screens live in here, so
+    // dropping the hamburger costs nothing.
+    + card(say('Meer', 'More', lang),
+        '<div class="more-links">'
+        + [['levels', '\u{1F331}', 'Doelen', 'Goals'],
+           ['notifications', '\u{1F514}', 'Berichten', 'Messages'],
+           ['settings', '\u{2699}', 'Instellingen', 'Settings'],
+           ['info', '\u{2139}', 'Info', 'Info']]
+          .map(([id, icon, nl, en]) =>
+            '<button class="more-link" data-open="' + id + '">'
+            + '<span class="more-icon" aria-hidden="true">' + icon + '</span>'
+            + '<span>' + say(nl, en, lang) + '</span>'
+            + '<span class="more-chevron" aria-hidden="true">&rsaquo;</span></button>').join('')
+        + '</div>')
     + card(say('Taal', 'Language', lang),
         '<div class="actions"><button class="btn ghost" data-lang="nl">Nederlands</button>'
         + '<button class="btn ghost" data-lang="en">English</button></div>')
@@ -3013,6 +3049,16 @@ function renderProfile(app, state, lang) {
         + '<h4>' + say('Ondergrens voor comfort', 'Comfort floor', lang) + '</h4>'
         + '<p class="note">' + floorNote + '</p>');
 }
+
+/**
+ * The five buttons along the bottom - Report 6's original design, validated
+ * with its 23-respondent survey, and the shape this group asked to return to.
+ *
+ * Everything else in TABS is a detail screen reached from inside one of these
+ * five, so nothing is lost: Goals from the level chip on Home and from
+ * Profile, and Settings, Messages and Info from Profile.
+ */
+const BOTTOM_TABS = Object.freeze(['home', 'savings', 'challenges', 'tips', 'profile']);
 
 const TABS = Object.freeze([
   Object.freeze({ id: 'home', icon: '\u{1F333}', nl: 'Start', en: 'Home', render: renderHome }),
@@ -3087,7 +3133,7 @@ function highlight(ring, anchorEl, stage) {
  * failure state and must never be treated as one.
  */
 function mountTour(stage, lang, onDone, controls = {}) {
-  const { onScreen, onDrawer } = controls;
+  const { onScreen } = controls;
   let index = 0;
   let shownScreen = null;
 
@@ -3102,9 +3148,7 @@ function mountTour(stage, lang, onDone, controls = {}) {
 
   function finish() {
     layer.remove();
-    // Never leave someone stranded on whichever tab they skipped from, or
-    // staring at a drawer the tour opened for them.
-    if (onDrawer) onDrawer(false);
+    // Never leave someone stranded on whichever tab they skipped from.
     if (onScreen && shownScreen !== 'home') onScreen('home');
     onDone();
   }
@@ -3120,8 +3164,6 @@ function mountTour(stage, lang, onDone, controls = {}) {
       onScreen(step.screen);
       shownScreen = step.screen;
     }
-    // After the screen, never before: opening a tab closes the drawer.
-    if (onDrawer) onDrawer(step.drawer === true);
     const counter = tourLabel('counter', lang)
       .replace('{n}', index + 1).replace('{total}', TOTAL_TOUR_STEPS);
 
@@ -3175,6 +3217,8 @@ function mountTour(stage, lang, onDone, controls = {}) {
 
 
 
+
+
 function boot(profileId) {
   // The model learns from the baseline window and is measured only on the
   // report window after it. Fitting and measuring the same days would force
@@ -3213,17 +3257,49 @@ function boot(profileId) {
  * Every entry keeps its text label - no icon-only navigation for a 50+ group
  * with limited digital confidence.
  */
-function drawer(activeId, lang) {
-  const items = TABS.map((tab) =>
-    '<button class="drawer-item' + (tab.id === activeId ? ' active' : '') + '" data-tab="' + tab.id + '">'
-    + '<span class="drawer-icon" aria-hidden="true">' + tab.icon + '</span>'
-    + '<span>' + (tab[lang] || tab.nl) + '</span></button>').join('');
+function tabBar(activeId, lang) {
+  // A detail screen keeps its parent lit, so the bar never goes blank
+  // underneath you.
+  const parent = BOTTOM_TABS.includes(activeId) ? activeId : 'profile';
 
-  return '<div class="drawer-scrim" data-close="drawer"></div>'
-    + '<nav class="drawer" aria-label="' + (lang === 'en' ? 'Menu' : 'Hoofdmenu') + '">'
-    + '<button class="drawer-close" data-close="drawer" aria-label="'
-    + (lang === 'en' ? 'Close menu' : 'Menu sluiten') + '">&times;</button>'
-    + items + '</nav>';
+  return '<nav class="tabbar" aria-label="' + (lang === 'en' ? 'Main' : 'Hoofdmenu') + '">'
+    + BOTTOM_TABS.map((id) => {
+      const tab = TABS.find((t) => t.id === id);
+      const on = id === parent;
+      return '<button class="tab' + (on ? ' active' : '') + '" data-tab="' + id + '"'
+        + (on ? ' aria-current="page"' : '') + '>'
+        + '<span class="tab-icon" aria-hidden="true">' + tab.icon + '</span>'
+        + '<span class="tab-label">' + (tab[lang] || tab.nl) + '</span></button>';
+    }).join('')
+    + '</nav>';
+}
+
+/**
+ * Watt's own words about the screen you are on, behind a small button in the
+ * header.
+ *
+ * The introduction runs once and can be skipped. Someone who skipped it, or
+ * sat through it and is still unsure on one screen, needs the explanation for
+ * that screen and nothing else - which is what helpFor() returns. It is the
+ * same copy the tour uses, never a paraphrase that could drift from it.
+ */
+function infoSheet(screenId, title, lang) {
+  const steps = helpFor(screenId);
+  const items = steps.length
+    ? steps.map((step) =>
+        '<div class="sheet-item"><strong>' + step[lang].title + '</strong>'
+        + '<p>' + step[lang].body + '</p></div>').join('')
+    : '<p>' + say('Hier valt weinig uit te leggen.', 'There is little to explain here.', lang) + '</p>';
+
+  return '<div class="sheet-scrim" data-close="info"></div>'
+    + '<aside class="sheet" role="dialog" aria-modal="true" aria-label="'
+    + say('Uitleg over ', 'About ', lang) + title + '">'
+    + '<div class="sheet-head">'
+    + '<div class="sheet-watt" aria-hidden="true">' + batterySvg('happy') + '</div>'
+    + '<h3>' + say('Wat staat hier?', 'What is on this screen?', lang) + '</h3>'
+    + '<button class="sheet-close" data-close="info" aria-label="'
+    + say('Sluiten', 'Close', lang) + '">&times;</button></div>'
+    + items + '</aside>';
 }
 
 /**
@@ -3244,11 +3320,10 @@ function languageSwitch(lang) {
 }
 
 function header(title, lang) {
-  return '<button class="menu-button" data-open="drawer" aria-label="'
-    + (lang === 'en' ? 'Open menu' : 'Menu openen') + '">'
-    + '<span></span><span></span><span></span></button>'
-    + '<span class="header-title">' + title + '</span>'
-    + languageSwitch(lang);
+  return '<span class="header-title">' + title + '</span>'
+    + languageSwitch(lang)
+    + '<button class="info-button" data-open="info" aria-label="'
+    + say('Uitleg over dit scherm', 'About this screen', lang) + '">i</button>';
 }
 
 /** The header before the app proper takes over: no drawer to open yet. */
@@ -3279,9 +3354,10 @@ function start(getApp, store) {
   const phone = document.getElementById('phone');
   const screen = document.getElementById('screen');
   const nav = document.getElementById('nav');
+  const tabs = document.getElementById('tabs');
   const bar = document.getElementById('header');
   let active = 'home';
-  let drawerOpen = false;
+  let infoOpen = false;
 
   function effectiveSeason() {
     const state = store.get();
@@ -3309,24 +3385,20 @@ function start(getApp, store) {
     phone.dataset.large = state.largeText === true ? 'true' : 'false';
     app.season = effectiveSeason();
     const tab = TABS.find((t) => t.id === active);
-    bar.innerHTML = header(tab[state.language] || tab.nl, state.language);
+    const title = tab[state.language] || tab.nl;
+    bar.innerHTML = header(title, state.language);
     screen.innerHTML = tab.render(app, state, state.language) + footerNote(app, state.language);
-    nav.innerHTML = drawerOpen ? drawer(active, state.language) : '';
+    // Outside #screen, so the bar stays put while the content scrolls.
+    tabs.innerHTML = tabBar(active, state.language);
+    nav.innerHTML = infoOpen ? infoSheet(active, title, state.language) : '';
     screen.scrollTop = resetScroll ? 0 : offset;
   }
 
-  function go(id) { active = id; drawerOpen = false; draw(true); }
-
-  /** Opens or closes the drawer. Used by the tour to show the whole menu. */
-  function setDrawer(open) {
-    if (drawerOpen === open) return;
-    drawerOpen = open;
-    draw();
-  }
+  function go(id) { active = id; infoOpen = false; draw(true); }
 
   phone.addEventListener('click', (event) => {
-    if (event.target.closest('[data-open="drawer"]')) { drawerOpen = true; draw(); return; }
-    if (event.target.closest('[data-close="drawer"]')) { drawerOpen = false; draw(); return; }
+    if (event.target.closest('[data-open="info"]')) { infoOpen = true; draw(); return; }
+    if (event.target.closest('[data-close="info"]')) { infoOpen = false; draw(); return; }
 
     // Watt, on demand. His steps are anchored to elements on the home screen,
     // so go there first - replaying from Profile would point at nothing.
@@ -3334,18 +3406,16 @@ function start(getApp, store) {
       if (phone.querySelector('.tour-layer')) return;
       go('home');
       mountTour(phone, store.get().language,
-        () => store.set({ ...store.get(), tourDone: true }),
-        { onScreen: go, onDrawer: setDrawer });
+        () => store.set({ ...store.get(), tourDone: true }), { onScreen: go });
       return;
     }
-
 
     const tab = event.target.closest('[data-tab]')?.dataset.tab;
     if (tab) { go(tab); return; }
 
-    // Cards on the dashboard open their detail screen (brief, Act 5).
+    // Cards and links open their detail screen.
     const open = event.target.closest('[data-open]')?.dataset.open;
-    if (open && open !== 'drawer') go(open);
+    if (open && open !== 'info') go(open);
   });
 
   // Consent can be withdrawn from Profile at any time, and the app keeps
@@ -3390,7 +3460,7 @@ function start(getApp, store) {
   });
 
   draw(true);
-  return { draw, go, setDrawer };
+  return { draw, go };
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -3441,7 +3511,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // is being shown it has not seen the introduction before.
         mountTour(document.getElementById('phone'), store.get().language,
           () => store.set({ ...store.get(), tourDone: true }),
-          { onScreen: appView.go, onDrawer: appView.setDrawer });
+          { onScreen: appView.go });
       },
     });
   } catch (error) {
