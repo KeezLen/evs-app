@@ -324,6 +324,18 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
 .more-chevron { margin-left: auto; font-size: 24px; color: var(--green-600); }
 .more-link:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 
+/* The full product name is longer than the old working title; keep it on one
+   line beside the language switch and the info button. */
+.header-title.brand { font-size: 16px; white-space: nowrap; }
+
+/* Five questions about the home on one screen: tighten the rows so they fit
+   without scrolling on a small phone. */
+.home-details { display: flex; flex-direction: column; }
+.home-details .field { min-height: 44px; padding: 2px 0; font-size: 17px; }
+.home-details input[type="text"] { font-size: 18px; padding: 8px; border-radius: 8px;
+                                   border: 2px solid var(--green-600); background: var(--surface);
+                                   width: 5.5em; }
+
 </style>
 </head>
 <body>
@@ -345,7 +357,14 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
  * built and easy to change afterwards. To rebrand: edit this file only.
  */
 const BRAND = Object.freeze({
-  name: 'Woneco',
+  // The project's own name, chosen over the earlier working title "Woneco".
+  // Changing it here changes it everywhere, which is the whole point of this
+  // file (handover decision D9).
+  name: 'Energieverdienspel',
+
+  // For the header, where the full name would crowd the language switch and
+  // the info button. EVS is what every report already calls it.
+  short: 'EVS',
 
   tagline: Object.freeze({
     nl: 'Bespaar zonder in de kou te zitten',
@@ -502,7 +521,10 @@ const HISTORY_DAYS = 90;
 const HOUSEHOLD = Object.freeze({
   occupants: 1,
   ageBand: '60+',
-  floorAreaM2: 70,
+  postcode: '6413',
+  rooms: 3,
+  floor: 1,
+  buildPeriod: '1975-1990',
   energyLabel: 'E',
   district: 'Heerlen-Noord',
 });
@@ -1542,7 +1564,11 @@ const STORAGE_KEY = 'woneco.state.v1';
 /** The data items the consent flow asks about, in the order it asks. */
 const CONSENT_ITEMS = Object.freeze([
   Object.freeze({ key: 'meterData', nl: 'Meterstanden (gas en stroom)', en: 'Meter readings (gas and electricity)' }),
-  Object.freeze({ key: 'weather', nl: 'Weergegevens', en: 'Weather data' }),
+  // Location rather than "weather data": the app asks where you live and
+  // looks the weather up from that. Naming the thing actually collected is
+  // the honest version, and it is what a tenant can meaningfully agree to.
+  Object.freeze({ key: 'location', nl: 'Je postcode, om het weer bij jou op te halen',
+                  en: 'Your postcode, to look up the weather where you live' }),
   Object.freeze({ key: 'homeDetails', nl: 'Gegevens over je woning', en: 'Details about your home' }),
   Object.freeze({ key: 'shareAggregated', nl: 'Anoniem meetellen in de buurtcijfers', en: 'Count anonymously in neighbourhood figures' }),
 ]);
@@ -1564,7 +1590,16 @@ function defaultState() {
     // options, so a tenant who accepts them without touching the dropdowns
     // must end up with exactly what they were shown. Defaults match the
     // simulated household in js/data/household.js.
-    home: { floorAreaM2: 70, occupants: 1 },
+    // What the group asked to be asked: where, how many rooms, how old, which
+    // floor, how many people. Rooms replaced floor area - a tenant knows how
+    // many rooms they have without having to estimate square metres.
+    home: {
+      postcode: '6413',
+      rooms: 3,
+      floor: 1,
+      buildPeriod: '1975-1990',
+      occupants: 1,
+    },
     shieldsUsed: 0,
 
     // Registration and login are mockups. This flag is the ONLY thing they
@@ -1927,16 +1962,16 @@ const INTRO_STEPS = Object.freeze([
   Object.freeze({
     id: 'gegevens', kind: 'info',
     nl: { title: 'Welke gegevens ik gebruik',
-          body: 'Je gas- en stroomstanden van de slimme meter, het weer bij jou in de buurt, en een paar dingen over je woning. Meer niet.' },
+          body: 'Je gas- en stroomstanden van de slimme meter, je postcode, en een paar dingen over je woning. Meer niet.' },
     en: { title: 'Which data I use',
-          body: 'Your gas and electricity readings from the smart meter, the weather where you live, and a few things about your home. Nothing more.' },
+          body: 'Your gas and electricity readings from the smart meter, your postcode, and a few things about your home. Nothing more.' },
   }),
   Object.freeze({
     id: 'waarom', kind: 'info',
     nl: { title: 'Waarom ik die nodig heb',
-          body: 'Met het weer erbij kan ik zien of je minder gebruikte dan verwacht, of dat het gewoon een zachte week was. Zonder dat kan ik je niets eerlijks vertellen.' },
+          body: 'Met je postcode zoek ik het weer bij jou op. Zo zie ik of je minder gebruikte dan verwacht, of dat het gewoon een zachte week was. Zonder dat kan ik je niets eerlijks vertellen.' },
     en: { title: 'Why I need them',
-          body: 'With the weather included I can tell whether you used less than expected, or whether it was simply a mild week. Without it I cannot tell you anything honest.' },
+          body: 'Your postcode lets me look up the weather where you live. That is how I tell whether you used less than expected, or whether it was simply a mild week. Without it I cannot tell you anything honest.' },
   }),
   Object.freeze({
     id: 'keuze', kind: 'consent',
@@ -1961,10 +1996,12 @@ const INTRO_STEPS = Object.freeze([
   }),
   Object.freeze({
     id: 'woning', kind: 'home',
+    // Kept short on purpose: the five questions below are the screen, and a
+    // long paragraph above them pushes the buttons off a small phone.
     nl: { title: 'Je woning',
-          body: 'Hoe groot je woning is en met hoeveel mensen je woont. Daarmee vergelijk ik je met woningen zoals die van jou.' },
+          body: 'Vijf korte vragen. Daarmee vergelijk ik je met woningen zoals die van jou.' },
     en: { title: 'Your home',
-          body: 'How big your home is and how many people live there. I use that to compare you with homes like yours.' },
+          body: 'Five short questions. I use them to compare you with homes like yours.' },
   }),
 ]);
 
@@ -2245,23 +2282,58 @@ function meterControls(lang) {
   </div>`;
 }
 
-/** Home details. Pre-filled so nobody has to type on a phone. */
+/** Floors, worded the way a resident would say them rather than as a number. */
+const FLOORS = Object.freeze([
+  Object.freeze({ value: 0, nl: 'Begane grond', en: 'Ground floor' }),
+  Object.freeze({ value: 1, nl: '1e verdieping', en: 'First floor' }),
+  Object.freeze({ value: 2, nl: '2e verdieping', en: 'Second floor' }),
+  Object.freeze({ value: 3, nl: '3e of hoger', en: 'Third or higher' }),
+]);
+
+/** Build periods rather than a year: nobody knows when their block went up. */
+const BUILD_PERIODS = Object.freeze([
+  Object.freeze({ value: 'voor-1975', nl: 'Voor 1975', en: 'Before 1975' }),
+  Object.freeze({ value: '1975-1990', nl: '1975 tot 1990', en: '1975 to 1990' }),
+  Object.freeze({ value: '1991-2005', nl: '1991 tot 2005', en: '1991 to 2005' }),
+  Object.freeze({ value: 'na-2005', nl: 'Na 2005', en: 'After 2005' }),
+  Object.freeze({ value: 'onbekend', nl: 'Weet ik niet', en: 'I do not know' }),
+]);
+
+/** These two are text; everything else about the home is a number. */
+const TEXT_FIELDS = Object.freeze(['postcode', 'buildPeriod']);
+
+/**
+ * The questions about the home, on one screen.
+ *
+ * The group asked for location, rooms, age and floor, and in the same breath
+ * asked not to make the flow extensive. So they share a single step, and every
+ * one is a tap on a pre-filled choice rather than something to type - except
+ * the postcode, which is four digits.
+ *
+ * "Weet ik niet" is a real answer to the age question. Forcing a guess would
+ * put worse data in than admitting the gap.
+ */
 function homeControls(state, lang) {
   // Read straight from state - no local fallback - so what is shown is always
   // what is stored, even if the tenant never touches these controls.
-  const area = state.home.floorAreaM2;
-  const people = state.home.occupants;
+  const { postcode, rooms, floor, buildPeriod, occupants } = state.home;
+  const options = (list, selected) => list.map((o) =>
+    `<option value="${o.value}"${o.value === selected ? ' selected' : ''}>${o[lang] ?? o.nl}</option>`).join('');
+  const numbers = (values, selected) => values.map((v) =>
+    `<option value="${v}"${v === selected ? ' selected' : ''}>${v}</option>`).join('');
+
   return `<div class="home-details">
-    <label class="field"><span>${lang === 'en' ? 'Floor area' : 'Woonoppervlak'}</span>
-      <select data-home="floorAreaM2">
-        ${[50, 60, 70, 80, 90].map((v) =>
-          `<option value="${v}"${v === area ? ' selected' : ''}>${v} m2</option>`).join('')}
-      </select></label>
+    <label class="field"><span>Postcode</span>
+      <input type="text" inputmode="numeric" maxlength="4" size="4"
+             data-home="postcode" value="${postcode}"></label>
+    <label class="field"><span>${lang === 'en' ? 'Rooms' : 'Aantal kamers'}</span>
+      <select data-home="rooms">${numbers([1, 2, 3, 4, 5, 6], rooms)}</select></label>
+    <label class="field"><span>${lang === 'en' ? 'Which floor' : 'Welke verdieping'}</span>
+      <select data-home="floor">${options(FLOORS, floor)}</select></label>
+    <label class="field"><span>${lang === 'en' ? 'How old is it' : 'Hoe oud is de woning'}</span>
+      <select data-home="buildPeriod">${options(BUILD_PERIODS, buildPeriod)}</select></label>
     <label class="field"><span>${lang === 'en' ? 'People living here' : 'Aantal bewoners'}</span>
-      <select data-home="occupants">
-        ${[1, 2, 3, 4].map((v) =>
-          `<option value="${v}"${v === people ? ' selected' : ''}>${v}</option>`).join('')}
-      </select></label>
+      <select data-home="occupants">${numbers([1, 2, 3, 4], occupants)}</select></label>
   </div>`;
 }
 
@@ -2316,7 +2388,11 @@ function mountOnboarding(container, initialState, lang, onFinish) {
 
     const homeKey = event.target.dataset?.home;
     if (homeKey) {
-      state = { ...state, home: { ...state.home, [homeKey]: Number(event.target.value) } };
+      // Postcode and build period are text; coercing them with Number() would
+      // store NaN and quietly blank the field on the next render.
+      const raw = event.target.value;
+      const value = TEXT_FIELDS.includes(homeKey) ? raw.trim() : Number(raw);
+      state = { ...state, home: { ...state.home, [homeKey]: value } };
     }
   });
 
@@ -2801,6 +2877,13 @@ function renderLevels(app, state, lang) {
 
 
 
+/** The label a tenant was shown for a stored home answer. */
+function homeLabel(list, value, lang) {
+  const found = list.find((o) => o.value === value);
+  return found ? (found[lang] ?? found.nl) : String(value);
+}
+
+
 
 
 
@@ -2980,8 +3063,13 @@ function renderProfile(app, state, lang) {
     'Below ' + pct(COMFORT_FLOOR_RATIO) + '% of what is expected, savings do not count. This threshold is a provisional value.', lang);
 
   return '<h2>' + say('Profiel', 'Profile', lang) + '</h2>'
+    // The same five answers the tenant gave during registration, worded the
+    // same way, so nothing looks like a different question on the way back.
     + card(say('Je woning', 'Your home', lang),
-        statRow(say('Oppervlak', 'Floor area', lang), state.home.floorAreaM2 + ' m2')
+        statRow('Postcode', state.home.postcode)
+        + statRow(say('Kamers', 'Rooms', lang), String(state.home.rooms))
+        + statRow(say('Verdieping', 'Floor', lang), homeLabel(FLOORS, state.home.floor, lang))
+        + statRow(say('Bouwjaar', 'Built', lang), homeLabel(BUILD_PERIODS, state.home.buildPeriod, lang))
         + statRow(say('Bewoners', 'Residents', lang), String(state.home.occupants))
         + statRow(say('Energielabel', 'Energy label', lang), HOUSEHOLD.energyLabel))
     + card(say('Wat je deelt', 'What you share', lang),
