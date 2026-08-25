@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Woneco</title>
+<title>Energieverdienspel</title>
 <style>
 /* Woneco design tokens. Values mirror BRAND.palette in js/brand.js. */
 :root {
@@ -335,6 +335,9 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
 .home-details input[type="text"] { font-size: 18px; padding: 8px; border-radius: 8px;
                                    border: 2px solid var(--green-600); background: var(--surface);
                                    width: 5.5em; }
+
+/* Why today's recommendation is this one, on the card itself. */
+.tip-why { display: block; font-size: 14px; color: #3c4d43; margin-top: 2px; }
 
 </style>
 </head>
@@ -1317,6 +1320,104 @@ function healthMessage(health, lang) {
     : 'Je boom hangt er slap bij. Gebruik een paar dagen minder dan verwacht, dan veert hij weer op. Hij verliest nooit een groeistap.';
 }
 
+// ---- js/engine/advice.js ----
+/**
+ * One personalised recommendation per day.
+ *
+ * The student development brief puts this at the centre: "one personalised
+ * recommendation per day, aimed at the largest feasible saving for that
+ * resident, without compromising comfort", and warns that generic tips must
+ * not become the main proposition.
+ *
+ * So the choice comes from the household's own recent readings rather than
+ * from a fixed ranking:
+ *
+ *  - whichever fuel they have most recently drifted above expectation on
+ *    decides which tips are candidates, because that is where their money is
+ *    actually going;
+ *  - a household already heating below the comfort floor is never told to turn
+ *    the heating down. That is the "without compromising comfort" half of the
+ *    sentence, and it is the difference between advice and harm;
+ *  - the day picks between the remaining candidates, so the recommendation
+ *    changes daily instead of showing the same top tip forever.
+ *
+ * Deterministic: the same day and the same readings always give the same
+ * answer. No Math.random(), no clock.
+ */
+
+
+
+
+/** Days of recent history the choice looks at. A week smooths out one odd day. */
+const RECENT_DAYS = 7;
+
+/**
+ * Picks today's recommendation.
+ *
+ * @param {Array} expectedSeries  expected use per day, oldest first
+ * @param {Array} readings        actual readings, same order and length
+ * @param {Array} tips            candidates, each with `fuel` and `heating`
+ * @returns {{ tip, reason, gasDrift, elecDrift }|null}
+ */
+function dailyRecommendation(expectedSeries, readings, tips) {
+  // A screen must never fail to render because advice could not be chosen.
+  if (!expectedSeries?.length || !readings?.length || !tips?.length) return null;
+
+  const from = Math.max(0, readings.length - RECENT_DAYS);
+  const recentExpected = expectedSeries.slice(from);
+  const recentActual = readings.slice(from);
+
+  // Drift in euros: positive means using MORE than the weather explains.
+  const drift = (get, price) => recentActual.reduce(
+    (sum, r, i) => sum + (get(r) - get(recentExpected[i])) * price, 0);
+  const gasDrift = drift((d) => d.gas_m3, PRICE_GAS_EUR_PER_M3);
+  const elecDrift = drift((d) => d.elec_kwh, PRICE_ELEC_EUR_PER_KWH);
+
+  // Under-heating: never answer a cold house by suggesting less heating.
+  const coldDays = recentActual.filter(
+    (r, i) => isBelowComfortFloor(recentExpected[i].gas_m3, r.gas_m3)).length;
+  const underHeating = coldDays > recentActual.length / 2;
+
+  let reason;
+  let candidates;
+  if (underHeating) {
+    reason = 'comfort';
+    candidates = tips.filter((t) => !t.heating);
+  } else if (gasDrift >= elecDrift) {
+    reason = 'gas';
+    candidates = tips.filter((t) => t.fuel === 'gas');
+  } else {
+    reason = 'elec';
+    candidates = tips.filter((t) => t.fuel === 'elec');
+  }
+  if (!candidates.length) candidates = tips;
+
+  // The day chooses between them, so the advice moves rather than repeating.
+  const index = dayOfYear(readings.at(-1).date) % candidates.length;
+
+  return { tip: candidates[index], reason, gasDrift, elecDrift };
+}
+
+/** Why this tip, in the tenant's own terms. Never blames. */
+function recommendationReason(reason, lang) {
+  const copy = {
+    gas: {
+      nl: 'Je verwarming is op dit moment je grootste post.',
+      en: 'Heating is where most of your money is going right now.',
+    },
+    elec: {
+      nl: 'Je stroomverbruik ligt op dit moment hoger dan verwacht.',
+      en: 'Your electricity use is running above expectation right now.',
+    },
+    comfort: {
+      nl: 'Je stookt al zuinig. Dit advies gaat daarom niet over verwarmen.',
+      en: 'You already heat sparingly, so this advice is not about heating.',
+    },
+  };
+  const entry = copy[reason] ?? copy.gas;
+  return entry[lang] ?? entry.nl;
+}
+
 // ---- js/data/tips.js ----
 /**
  * Tips, ranked by what they actually save.
@@ -1324,6 +1425,14 @@ function healthMessage(health, lang) {
  * Every euro figure is derived from the canonical prices in engine/savings.js
  * and carries its assumption on screen. Report 6's review found the original
  * tip figures were illustrative but presented as measured; these are labelled.
+ *
+ * Each figure is an estimate for a home like the target household's, NOT a
+ * promise that every resident saves that amount - the development brief is
+ * explicit that a generic fixed annual saving must not be presented as if it
+ * applied to everyone. Screens must say "a home like yours", never "you".
+ *
+ * `fuel` and `heating` let engine/advice.js choose which tip a household
+ * actually needs today, rather than always showing the same top-ranked one.
  *
  * Figures are per tip. They are NOT additive: doing all of them does not save
  * their sum, and no screen may total this list. Their sum deliberately exceeds
@@ -1347,7 +1456,7 @@ const HEATING_DAYS = HEATING_DAYS_PER_YEAR;
 
 const TIPS = Object.freeze([
   Object.freeze({
-    id: 'thermostat',
+    id: 'thermostat', fuel: 'gas', heating: true,
     euroPerYear: THERMOSTAT_1C_EUR_PER_DAY * HEATING_DAYS,
     nl: { title: 'Thermostaat 1 graad lager',
           body: 'Van 20 naar 19 graden. Een trui scheelt meer dan je denkt.',
@@ -1357,7 +1466,7 @@ const TIPS = Object.freeze([
           basis: '0.9 m3 of gas per heating day, ' + HEATING_DAYS + ' heating days' },
   }),
   Object.freeze({
-    id: 'shower',
+    id: 'shower', fuel: 'gas', heating: false,
     euroPerYear: 0.03 * PRICE_GAS_EUR_PER_M3 * 300,
     nl: { title: 'Drie minuten korter douchen',
           body: 'Van acht naar vijf minuten. Warm water is na verwarmen je grootste gaspost.',
@@ -1367,7 +1476,7 @@ const TIPS = Object.freeze([
           basis: '0.03 m3 of gas per shower, 300 showers a year' },
   }),
   Object.freeze({
-    id: 'unusedroom',
+    id: 'unusedroom', fuel: 'gas', heating: true,
     euroPerYear: 0.05 * PRICE_GAS_EUR_PER_M3 * HEATING_DAYS,
     nl: { title: 'Radiator uit in een kamer die je niet gebruikt',
           body: 'Houd de deur dicht. Laat het nooit onder de 15 graden komen, anders krijg je vocht.',
@@ -1377,7 +1486,7 @@ const TIPS = Object.freeze([
           basis: '0.05 m3 of gas per heating day' },
   }),
   Object.freeze({
-    id: 'coldwash',
+    id: 'coldwash', fuel: 'elec', heating: false,
     euroPerYear: 0.4 * PRICE_ELEC_EUR_PER_KWH * 60,
     nl: { title: 'Was op 30 graden',
           body: 'Voor gewone was is 30 graden genoeg.',
@@ -1387,7 +1496,7 @@ const TIPS = Object.freeze([
           basis: '0.4 kWh less per wash, 60 washes a year' },
   }),
   Object.freeze({
-    id: 'standby',
+    id: 'standby', fuel: 'elec', heating: false,
     euroPerYear: 0.006 * 24 * 365 * PRICE_ELEC_EUR_PER_KWH,
     nl: { title: 'Apparaten echt uit in plaats van stand-by',
           body: 'Een stekkerdoos met schakelaar doet het werk voor je.',
@@ -2647,12 +2756,12 @@ const INFO_SECTIONS = Object.freeze([
     id: 'what',
     nl: { title: 'Wat is het Energieverdienspel?',
           lead: 'Een app zonder winstoogmerk voor huurders van sociale huurwoningen. Heerlen-Noord is de eerste buurt.',
-          points: ['Dagelijkse meterstanden uit de P4-poort van je slimme meter.',
+          points: ['Je dagelijkse meterstanden, zoals je netbeheerder die al doorgeeft. Je hoeft zelf niets aan te sluiten.',
                    'Je verbruik omgerekend naar euro&rsquo;s, met concreet advies.',
                    'Een boom die groeit zolang je onder de verwachting blijft.'] },
     en: { title: 'What is the Energieverdienspel?',
           lead: 'A non-profit app for social housing tenants. Heerlen-Noord is the first neighbourhood.',
-          points: ['Daily meter readings from the P4 port of your smart meter.',
+          points: ['Your daily meter readings, as your grid operator already passes them on. You connect nothing yourself.',
                    'Your use converted into euros, with concrete advice.',
                    'A tree that grows for as long as you stay below the expectation.'] },
   }),
@@ -2877,6 +2986,7 @@ function renderLevels(app, state, lang) {
 
 
 
+
 /** The label a tenant was shown for a stored home answer. */
 function homeLabel(list, value, lang) {
   const found = list.find((o) => o.value === value);
@@ -2897,7 +3007,10 @@ function renderHome(app, state, lang) {
   const { stage, progress, cumulative, floorDays, readings, rawNet, units, health } = app;
   const withheld = comfortIntervention(floorDays, readings.length, lang);
   const stageName = stage[lang] || stage.nl;
-  const topTip = rankedTips()[0];
+  // Chosen from this household's own recent readings, and never a
+  // turn-the-heating-down tip for someone already under the comfort floor.
+  const advice = dailyRecommendation(app.expectedSeries, readings, TIPS);
+  const topTip = advice ? advice.tip : rankedTips()[0];
 
   // Euro stays visually dominant (Report 6's survey: 69.6% preferred euros);
   // kWh and m3 sit underneath, smaller, per the demonstrator brief.
@@ -2910,6 +3023,7 @@ function renderHome(app, state, lang) {
   const tipCard = '<button class="tip-card" data-open="tips">'
     + '<span class="tip-kicker">' + say('Tip van vandaag', 'Today’s tip', lang) + '</span>'
     + '<span class="tip-title">' + topTip[lang].title + '</span>'
+    + (advice ? '<span class="tip-why">' + recommendationReason(advice.reason, lang) + '</span>' : '')
     + '<span class="tip-points">+' + toPoints(topTip.euroPerYear / 365) + ' '
     + say('punten per dag', 'points a day', lang) + '</span></button>';
 
@@ -3022,11 +3136,14 @@ function renderChallenges(app, state, lang) {
 
 function renderTips(app, state, lang) {
   const intro = say(
-    'Op volgorde van wat het meeste oplevert. Je kunt ze niet optellen: alles tegelijk doen levert niet de som op.',
-    'Ordered by what saves most. They do not add up: doing everything at once does not save the total.', lang);
+    'Je advies van vandaag staat op Start en is gekozen op jouw eigen verbruik. Dit is de volledige lijst, op volgorde van wat het gemiddeld oplevert. Je kunt ze niet optellen: alles tegelijk doen levert niet de som op.',
+    'Your recommendation for today is on Home, chosen from your own use. This is the full list, ordered by what it saves on average. They do not add up: doing everything at once does not save the total.', lang);
 
   const items = rankedTips().map((t) => card(t[lang].title,
     '<p class="tip-euro">' + euro(t.euroPerYear) + ' ' + say('per jaar', 'a year', lang) + '</p>'
+    + '<p class="note">' + say(
+        'Geschat voor een woning zoals die van jou. Wat jij bespaart hangt af van je eigen verbruik.',
+        'Estimated for a home like yours. What you save depends on your own use.', lang) + '</p>'
     + '<p>' + t[lang].body + '</p>'
     + '<p class="note">' + say('Gerekend met', 'Based on', lang) + ': ' + t[lang].basis + '</p>')).join('');
 
@@ -3379,13 +3496,13 @@ function infoSheet(screenId, title, lang) {
         + '<p>' + step[lang].body + '</p></div>').join('')
     : '<p>' + say('Hier valt weinig uit te leggen.', 'There is little to explain here.', lang) + '</p>';
 
-  return '<div class="sheet-scrim" data-close="info"></div>'
+  return '<div class="sheet-scrim" data-close="help"></div>'
     + '<aside class="sheet" role="dialog" aria-modal="true" aria-label="'
     + say('Uitleg over ', 'About ', lang) + title + '">'
     + '<div class="sheet-head">'
     + '<div class="sheet-watt" aria-hidden="true">' + batterySvg('happy') + '</div>'
     + '<h3>' + say('Wat staat hier?', 'What is on this screen?', lang) + '</h3>'
-    + '<button class="sheet-close" data-close="info" aria-label="'
+    + '<button class="sheet-close" data-close="help" aria-label="'
     + say('Sluiten', 'Close', lang) + '">&times;</button></div>'
     + items + '</aside>';
 }
@@ -3410,7 +3527,7 @@ function languageSwitch(lang) {
 function header(title, lang) {
   return '<span class="header-title">' + title + '</span>'
     + languageSwitch(lang)
-    + '<button class="info-button" data-open="info" aria-label="'
+    + '<button class="info-button" data-help aria-label="'
     + say('Uitleg over dit scherm', 'About this screen', lang) + '">i</button>';
 }
 
@@ -3485,8 +3602,10 @@ function start(getApp, store) {
   function go(id) { active = id; infoOpen = false; draw(true); }
 
   phone.addEventListener('click', (event) => {
-    if (event.target.closest('[data-open="info"]')) { infoOpen = true; draw(); return; }
-    if (event.target.closest('[data-close="info"]')) { infoOpen = false; draw(); return; }
+    // data-help, not data-open="info": "info" is also the Info screen's tab id,
+    // and sharing it made this button swallow the link to that screen.
+    if (event.target.closest('[data-help]')) { infoOpen = true; draw(); return; }
+    if (event.target.closest('[data-close="help"]')) { infoOpen = false; draw(); return; }
 
     // Watt, on demand. His steps are anchored to elements on the home screen,
     // so go there first - replaying from Profile would point at nothing.
@@ -3503,7 +3622,7 @@ function start(getApp, store) {
 
     // Cards and links open their detail screen.
     const open = event.target.closest('[data-open]')?.dataset.open;
-    if (open && open !== 'info') go(open);
+    if (open) go(open);
   });
 
   // Consent can be withdrawn from Profile at any time, and the app keeps
