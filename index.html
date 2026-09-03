@@ -32,12 +32,25 @@ body {
   min-height: 100vh;
 }
 
+/*
+ * The layout follows the device, not only the window width.
+ *
+ *  - a phone, or any touch device up to tablet size, gets the app edge to
+ *    edge with no frame: it should feel like an app, not a picture of one;
+ *  - a laptop gets the app inside a phone frame, because that is what it is,
+ *    sized to the window so it never runs off the bottom;
+ *  - a wide laptop also gets the notes panel beside it.
+ *
+ * pointer: coarse is what separates a tablet from a small laptop window. Width
+ * alone cannot tell those apart, and they want opposite treatments.
+ */
 #phone {
   /* Positioned so the drawer and the tour overlay (#nav, .tour-*) anchor to
      the phone rather than to the viewport once the shell offsets it. */
   position: relative;
   width: 390px;
   height: 844px;
+  max-height: calc(100vh - 48px);
   background: var(--surface);
   border-radius: 36px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, .28);
@@ -46,9 +59,11 @@ body {
   flex-direction: column;
 }
 
-@media (max-width: 480px) {
+/* --- Phone and tablet: the app is the whole screen --- */
+@media (max-width: 700px), (pointer: coarse) and (max-width: 1024px) {
   body { background: var(--surface); }
-  #phone { width: 100vw; height: 100dvh; border-radius: 0; box-shadow: none; }
+  #phone { width: 100vw; height: 100dvh; max-height: none;
+           border-radius: 0; box-shadow: none; }
 }
 
 #screen { flex: 1; overflow-y: auto; padding: var(--gap); }
@@ -262,18 +277,13 @@ body {
 /* Larger text, from Settings. Report 6 validated 20px as the default. */
 #phone[data-large="true"] { --font-base: 23px; font-size: 23px; }
 
-/* Layout: the phone, centred. */
+/* Layout: the phone, centred, with room beside it when the screen allows. */
 #stage { min-height: 100vh; display: flex; flex-direction: column;
-         align-items: center; justify-content: center; gap: 16px; padding: 20px; }
+         align-items: center; justify-content: center; gap: 24px; padding: 24px; }
 
-#phone { max-height: min(844px, calc(100vh - 160px)); }
-
-@media (max-width: 480px) {
-  #stage { padding: 0; gap: 0; justify-content: flex-start; }
-  /* On a real phone there is no desk to leave room for. The clamp above is
-     for the framed preview on a laptop, and would otherwise leave a dead
-     strip below the app on the device it is actually designed for. */
-  #phone { max-height: none; }
+@media (max-width: 700px), (pointer: coarse) and (max-width: 1024px) {
+  /* On the device this is designed for there is no desk to leave room for. */
+  #stage { padding: 0; gap: 0; justify-content: flex-start; min-height: 100dvh; }
 }
 
 /* NL/EN in the header: reachable from the very first screen, before the
@@ -339,6 +349,63 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
 /* Why today's recommendation is this one, on the card itself. */
 .tip-why { display: block; font-size: 14px; color: #3c4d43; margin-top: 2px; }
 
+/* --- Desktop: the phone, with room beside it --- */
+/* The tour layer hangs off #stage now, so its bubble can sit next to the
+   phone instead of covering the screen it is describing. */
+#stage { position: relative; }
+
+#side { display: none; }
+
+/* --- Wide laptop: notes beside the phone --- */
+@media (min-width: 1100px) {
+  #stage { flex-direction: row; align-items: center; justify-content: center; gap: 32px; }
+  #side { display: block; width: 340px; align-self: center;
+          background: var(--surface); border-radius: var(--radius); padding: 18px;
+          box-shadow: 0 6px 24px rgba(0, 0, 0, .10); }
+}
+
+/* A touch device wide enough to reach the rule above is still a tablet, and
+   the app is already filling its screen - there is nothing to sit beside. */
+@media (pointer: coarse) and (max-width: 1024px) {
+  #side { display: none; }
+}
+
+.side-title { margin: 0 0 .3em; font-size: 20px; color: var(--green-900); }
+.side-note { margin: 0; font-size: 14px; color: #4a5a50; }
+.notes-box { width: 100%; margin: 10px 0; padding: 10px; font: inherit; font-size: 16px;
+             border: 2px solid var(--green-600); border-radius: 10px; resize: vertical;
+             background: var(--surface); color: var(--ink); }
+.notes-box:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Watt beside the phone rather than over it, once there is room. */
+.tour-bubble[data-side="true"] { right: auto; width: 340px; }
+.tour-bubble[data-side="false"] { right: auto; width: 366px; max-width: calc(100vw - 24px); }
+
+/* Back to the beginning, top left, where someone who is lost will look. */
+.restart-button { display: flex; align-items: center; gap: 5px; flex: none;
+                  min-height: 34px; padding: 4px 10px; cursor: pointer;
+                  border: 2px solid var(--green-600); border-radius: 999px;
+                  background: transparent; color: var(--green-900);
+                  font-family: inherit; font-size: 14px; font-weight: 600; }
+.restart-button:hover { background: var(--green-100); }
+.restart-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 420px) { .restart-label { display: none; } }
+
+/* --- The tour must not sit on the notes, or block them --- */
+/* The layer spans the stage so the bubble can sit beside the phone, but only
+   the dim and the bubble take clicks. Everything else - the notes panel above
+   all - stays usable while Watt is talking. */
+.tour-layer { pointer-events: none; }
+.tour-dim { pointer-events: auto; }
+.tour-bubble { pointer-events: auto; }
+.tour-ring { pointer-events: none; }
+
+/* With the notes panel on screen there is no room to Watt's right, so he moves
+   to the left of the phone - and the phone shifts right to make that room. */
+@media (min-width: 1100px) {
+  #stage[data-tour-active] { justify-content: flex-end; padding-right: 32px; }
+}
+
 </style>
 </head>
 <body>
@@ -349,6 +416,7 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
     <footer id="tabs"></footer>
     <div id="nav"></div>
   </div>
+  <aside id="side"></aside>
 </div>
 <script type="module">
 // ---- js/brand.js ----
@@ -2061,6 +2129,16 @@ const INTRO_STEPS = Object.freeze([
     en: { title: 'Which language? / Welke taal?',
           body: 'Pick the language you read most comfortably. You can change this later at any time.' },
   }),
+  // Straight after the language choice, before Watt introduces himself: this
+  // link goes to people who have never heard of the Energieverdienspel, and
+  // they need to know what they are looking at before anything else.
+  Object.freeze({
+    id: 'watis', kind: 'info',
+    nl: { title: 'Wat is het Energieverdienspel?',
+          body: 'Een app zonder winstoogmerk voor huurders van sociale huurwoningen, om te beginnen in Heerlen-Noord. Hij leest je meterstanden, laat in euro&rsquo;s zien wat je verbruikt, en geeft elke dag &eacute;&eacute;n advies dat bij jouw woning past. Besparen zonder in de kou te zitten.' },
+    en: { title: 'What is the Energieverdienspel?',
+          body: 'A non-profit app for social housing tenants, starting in Heerlen-Noord. It reads your meter, shows in euros what you use, and gives you one piece of advice a day that fits your home. Saving without sitting in the cold.' },
+  }),
   Object.freeze({
     id: 'welkom', kind: 'info',
     nl: { title: 'Hoi, ik ben ' + ASSISTANT_NAME,
@@ -2234,10 +2312,10 @@ const TOUR_STEPS = Object.freeze([
   }),
   Object.freeze({
     id: 'klaar', screen: 'home', anchor: null,
-    nl: { title: 'Dat was het',
-          body: 'Je kunt me altijd terugvragen bij Profiel, als je even kwijt bent waar iets staat.' },
-    en: { title: 'That was it',
-          body: 'You can always ask me back from Profile if you lose track of where something is.' },
+    nl: { title: 'Klaar, je kunt beginnen',
+          body: 'Je hebt alles gezien. Kijk gerust zelf rond. Weet je even niet meer wat er op een scherm staat, tik dan op de i rechtsboven, of vraag mij terug bij Profiel.' },
+    en: { title: 'All set, off you go',
+          body: 'You have seen everything. Have a look around on your own. If you lose track of what a screen shows, tap the i at the top right, or ask me back from Profile.' },
   }),
 ]);
 
@@ -2589,8 +2667,9 @@ function renderCredentials(mode, lang = 'nl') {
       'Nagebootst scherm. Er wordt niets verstuurd en niets opgeslagen &mdash; ook je wachtwoord niet.',
       'Simulated screen. Nothing is sent and nothing is stored &mdash; not your password either.', lang)
     + '</p>'
+    // No "skip" beside it: it reached exactly the same screen as the button
+    // next to it, so it looked like a choice while being none.
     + '<div class="actions">'
-    + '<button class="btn ghost" data-access-action="skip">' + say('Overslaan', 'Skip', lang) + '</button>'
     + '<button class="btn" data-access-action="submit">'
     + (isRegister ? say('Account maken', 'Create account', lang) : say('Inloggen', 'Log in', lang))
     + '</button></div></section>';
@@ -2702,7 +2781,7 @@ function mountAccess(container, opts) {
       showRoles();
       return;
     }
-    if (action === 'skip' || action === 'roles') { showRoles(); return; }
+    if (action === 'roles') { showRoles(); return; }
 
     const role = event.target.closest('[data-role]')?.dataset.role;
     if (!role) return;
@@ -2963,6 +3042,70 @@ function renderLevels(app, state, lang) {
         + '</p>');
 }
 
+// ---- js/screens/notes.js ----
+/**
+ * A notes panel beside the phone, for whoever is showing the demo.
+ *
+ * Typed text is kept in localStorage, so it survives closing the tab and
+ * coming back. Two honest limits, stated on the panel itself rather than
+ * discovered later:
+ *
+ *  - it is stored in THIS browser. Someone opening the same link on another
+ *    laptop or phone sees an empty panel. Sharing notes between people needs a
+ *    server, which this demonstrator deliberately does not have;
+ *  - a browser blocking site data, or private browsing, may drop it. Every
+ *    read and write is wrapped, so the panel still works as a scratch pad even
+ *    when nothing can be saved.
+ *
+ * Its own storage key, separate from the app state, so clearing the demo with
+ * "opnieuw beginnen" never wipes someone's notes.
+ *
+ * Hidden on narrow screens: on a phone there is no room beside the app, and
+ * this is a presenter's tool rather than part of the product.
+ */
+
+
+const NOTES_KEY = 'evs.notes.v1';
+
+/** Reads saved notes. Never throws - storage can be unavailable. */
+function loadNotes(storage) {
+  try {
+    return storage.getItem(NOTES_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Saves notes. Returns false when storage refused, rather than throwing. */
+function saveNotes(storage, text) {
+  try {
+    storage.setItem(NOTES_KEY, text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Escapes text, so a stray tag in the notes cannot break the panel. */
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderNotes(text, lang) {
+  return '<h2 class="side-title">' + say('Notities', 'Notes', lang) + '</h2>'
+    + '<p class="side-note">' + say(
+      'Ruimte voor je eigen aantekeningen bij deze demo.',
+      'Room for your own notes alongside this demo.', lang) + '</p>'
+    + '<textarea class="notes-box" data-notes rows="10" aria-label="'
+    + say('Notities', 'Notes', lang) + '" placeholder="' + say(
+      'Typ hier&hellip;', 'Type here&hellip;', lang) + '">' + escapeHtml(text) + '</textarea>'
+    + '<p class="side-note">' + say(
+      'Wordt bewaard in deze browser, op dit apparaat. Iemand anders die de link opent, ziet zijn eigen lege blad.',
+      'Saved in this browser, on this device. Anyone else opening the link gets their own blank page.', lang)
+    + '</p>';
+}
+
 // ---- js/screens/tabs.js ----
 /**
  * The five tab screens (spec section 12).
@@ -3065,9 +3208,22 @@ function renderSavings(app, state, lang) {
     '<button class="chip' + (p.id === state.period ? ' on' : '') + '" data-period="' + p.id + '">'
     + (p[lang] || p.nl) + '</button>').join('');
 
+  // "Season" is 45 days, not 90, and that surprises people. There ARE 90 days
+  // of history: the first 45 teach the model what this home normally uses, and
+  // a day cannot both set the expectation and be judged against it. Say so
+  // where the number appears, rather than leaving it looking like a bug.
   const scope = period.measured
     ? say('over ' + period.days + ' gemeten dagen', 'over ' + period.days + ' measured days', lang)
     : say('geschat, niet gemeten', 'estimated, not measured', lang);
+
+  const seasonNote = state.period === 'season' ? card(
+    say('Waarom ' + period.days + ' dagen en niet 90?', 'Why ' + period.days + ' days and not 90?', lang),
+    '<p class="note">' + say(
+      'Er zijn 90 dagen aan meterstanden. De eerste ' + BASELINE_DAYS
+        + ' gebruikt het model om te leren wat in jouw woning normaal is. Diezelfde dagen kunnen niet ook meetellen als besparing: je kunt de lat niet leggen en er tegelijk overheen springen. Daarom wordt er gemeten over de ' + period.days + ' dagen daarna.',
+      'There are 90 days of meter readings. The model uses the first ' + BASELINE_DAYS
+        + ' to learn what is normal for your home. Those same days cannot also count as saving: you cannot set the bar and clear it at the same time. So the measurement runs over the ' + period.days + ' days after that.', lang)
+    + '</p>') : '';
 
   // A projection above the headline the reports themselves publish is the
   // failure the handover flags. Say it on the screen rather than hoping the
@@ -3106,6 +3262,7 @@ function renderSavings(app, state, lang) {
   return '<h2>' + say('Besparing', 'Savings', lang) + '</h2>'
     + card('', totals)
     + projection
+    + seasonNote
     + card(say('Jouw verbruik tegenover de verwachting', 'Your use against the expectation', lang),
         consumptionChart(readings, expectedSeries, lang) + '<p class="note">' + chartNote + '</p>')
     + card(say('Wat je niet kunt veranderen', 'What you cannot change', lang), '<p>' + fixed + '</p>');
@@ -3294,20 +3451,70 @@ const TABS = Object.freeze([
 
 const TOUR_LABELS = {
   next: { nl: 'Verder', en: 'Next' },
+  back: { nl: 'Terug', en: 'Back' },
   done: { nl: 'Ik snap het', en: 'Got it' },
   skip: { nl: 'Sla uitleg over', en: 'Skip the tour' },
   counter: { nl: '{n} van {total}', en: '{n} of {total}' },
 };
 const tourLabel = (key, lang) => TOUR_LABELS[key][lang] || TOUR_LABELS[key].nl;
 
-/** Places the bubble near its anchor, keeping it fully on screen. */
+/** Room beside the phone needed before the bubble will sit there. */
+const SIDE_BUBBLE_MIN_PX = 360;
+
+/** The notes panel, when it is on screen. Never covered, never blocked. */
+function notesBox(stage) {
+  const el = stage.querySelector('#side');
+  if (!el) return null;
+  return getComputedStyle(el).display === 'none' ? null : el.getBoundingClientRect();
+}
+
+/**
+ * Places the bubble near its anchor.
+ *
+ * On a laptop the bubble sits BESIDE the phone rather than on top of it. Over
+ * the phone it hid the very screen it was describing, which is the opposite of
+ * what a walkthrough is for. On a narrow screen there is nowhere to put it but
+ * over the app, so it keeps the old behaviour there.
+ */
 function position(bubble, anchorEl, stage) {
   const pad = 12;
   const box = stage.getBoundingClientRect();
+  const phoneEl = stage.querySelector('#phone');
+  const phone = phoneEl ? phoneEl.getBoundingClientRect() : box;
+  // Whoever is running the demo wants to take notes while Watt talks, so the
+  // bubble goes on whichever side does not reach the notes panel. Right is
+  // preferred; when the notes are there, left is what is left.
+  const notes = notesBox(stage);
+  const roomRight = (notes ? notes.left : box.right) - phone.right;
+  const roomLeft = phone.left - box.left;
+
+  const verticalTop = () => {
+    const anchorTop = anchorEl
+      ? anchorEl.getBoundingClientRect().top - box.top - 16
+      : phone.top - box.top + 90;
+    const lowest = Math.max(pad, box.height - bubble.offsetHeight - pad);
+    return Math.min(Math.max(pad, anchorTop), lowest) + 'px';
+  };
+
+  if (roomRight >= SIDE_BUBBLE_MIN_PX) {
+    bubble.dataset.side = 'true';
+    bubble.style.left = (phone.right - box.left + 24) + 'px';
+    bubble.style.top = verticalTop();
+    return;
+  }
+  if (roomLeft >= SIDE_BUBBLE_MIN_PX) {
+    bubble.dataset.side = 'true';
+    bubble.style.left = (phone.left - box.left - bubble.offsetWidth - 24) + 'px';
+    bubble.style.top = verticalTop();
+    return;
+  }
+
+  bubble.dataset.side = 'false';
+  const left = phone.left - box.left + pad;
+  bubble.style.left = left + 'px';
 
   if (!anchorEl) {
-    bubble.style.top = (box.height / 2 - bubble.offsetHeight / 2) + 'px';
-    bubble.style.left = pad + 'px';
+    bubble.style.top = (phone.top - box.top + phone.height / 2 - bubble.offsetHeight / 2) + 'px';
     return;
   }
 
@@ -3315,9 +3522,25 @@ function position(bubble, anchorEl, stage) {
   const below = a.bottom - box.top + pad;
   const above = a.top - box.top - bubble.offsetHeight - pad;
   // Prefer below the anchor; flip above when there is not enough room.
-  const top = below + bubble.offsetHeight < box.height ? below : Math.max(pad, above);
-  bubble.style.top = top + 'px';
-  bubble.style.left = pad + 'px';
+  const fits = below + bubble.offsetHeight < phone.bottom - box.top;
+  bubble.style.top = (fits ? below : Math.max(pad, above)) + 'px';
+}
+
+/**
+ * The dim covers the phone and nothing else.
+ *
+ * It used to cover the whole stage, which greyed out the notes panel and -
+ * because the layer sits above everything - swallowed clicks meant for it. You
+ * could neither read nor type your notes while Watt was talking.
+ */
+function dimThePhoneOnly(dim, stage) {
+  const box = stage.getBoundingClientRect();
+  const phoneEl = stage.querySelector('#phone');
+  const p = phoneEl ? phoneEl.getBoundingClientRect() : box;
+  dim.style.left = (p.left - box.left) + 'px';
+  dim.style.top = (p.top - box.top) + 'px';
+  dim.style.width = p.width + 'px';
+  dim.style.height = p.height + 'px';
 }
 
 /** Draws a ring around the element being described. */
@@ -3347,12 +3570,14 @@ function mountTour(stage, lang, onDone, controls = {}) {
   layer.innerHTML = '<div class="tour-dim"></div><div class="tour-ring"></div>'
     + '<div class="tour-bubble" role="dialog" aria-live="polite"></div>';
   stage.appendChild(layer);
+  stage.dataset.tourActive = 'on';
 
   const ring = layer.querySelector('.tour-ring');
   const bubble = layer.querySelector('.tour-bubble');
 
   function finish() {
     layer.remove();
+    delete stage.dataset.tourActive;
     // Never leave someone stranded on whichever tab they skipped from.
     if (onScreen && shownScreen !== 'home') onScreen('home');
     onDone();
@@ -3377,7 +3602,12 @@ function mountTour(stage, lang, onDone, controls = {}) {
       + '<div class="tour-speech">'
       + '<p class="tour-title">' + step[lang].title + '</p>'
       + '<p class="tour-body">' + step[lang].body + '</p>'
+      // Back as well as forward: a walkthrough you can only run one way makes
+      // anyone who missed something sit through the whole thing again.
       + '<div class="tour-actions">'
+      + (index > 0
+        ? '<button class="btn ghost" data-tour="back">&lsaquo; ' + tourLabel('back', lang) + '</button>'
+        : '')
       + '<button class="btn" data-tour="next">' + (isLast ? tourLabel('done', lang) : tourLabel('next', lang)) + '</button>'
       + '</div>'
       + '<button class="tour-skip" data-tour="skip">' + tourLabel('skip', lang) + '</button>'
@@ -3385,6 +3615,7 @@ function mountTour(stage, lang, onDone, controls = {}) {
       + '</div>';
 
     const anchorEl = step.anchor ? stage.querySelector(step.anchor) : null;
+    dimThePhoneOnly(layer.querySelector('.tour-dim'), stage);
     highlight(ring, anchorEl, stage);
     position(bubble, anchorEl, stage);
   }
@@ -3393,6 +3624,13 @@ function mountTour(stage, lang, onDone, controls = {}) {
     const action = event.target.closest('[data-tour]')?.dataset.tour;
     if (!action) return;
     if (action === 'skip') { finish(); return; }
+    if (action === 'back') {
+      // shownScreen is cleared so stepping back re-opens that step's screen.
+      index = Math.max(0, index - 1);
+      shownScreen = null;
+      draw();
+      return;
+    }
     if (index >= TOTAL_TOUR_STEPS - 1) { finish(); return; }
     index += 1;
     draw();
@@ -3410,6 +3648,7 @@ function mountTour(stage, lang, onDone, controls = {}) {
  * is active. First open goes through Watt's introduction instead, which is
  * also the only place consent is given.
  */
+
 
 
 
@@ -3524,8 +3763,17 @@ function languageSwitch(lang) {
     + '</div>';
 }
 
+/** Back to the very first screen. Clears the demo, keeps the notes. */
+function restartButton(lang) {
+  return '<button class="restart-button" data-restart aria-label="'
+    + say('Demo opnieuw beginnen', 'Restart the demo', lang) + '">'
+    + '<span aria-hidden="true">&#8635;</span>'
+    + '<span class="restart-label">' + say('Opnieuw', 'Restart', lang) + '</span></button>';
+}
+
 function header(title, lang) {
-  return '<span class="header-title">' + title + '</span>'
+  return restartButton(lang)
+    + '<span class="header-title">' + title + '</span>'
     + languageSwitch(lang)
     + '<button class="info-button" data-help aria-label="'
     + say('Uitleg over dit scherm', 'About this screen', lang) + '">i</button>';
@@ -3533,7 +3781,8 @@ function header(title, lang) {
 
 /** The header before the app proper takes over: no drawer to open yet. */
 function accessHeader(lang) {
-  return '<span class="header-title brand">' + BRAND.name + '</span>' + languageSwitch(lang);
+  return restartButton(lang)
+    + '<span class="header-title brand">' + BRAND.name + '</span>' + languageSwitch(lang);
 }
 
 function footerNote(app, lang) {
@@ -3610,9 +3859,9 @@ function start(getApp, store) {
     // Watt, on demand. His steps are anchored to elements on the home screen,
     // so go there first - replaying from Profile would point at nothing.
     if (event.target.closest('[data-replay-tour]')) {
-      if (phone.querySelector('.tour-layer')) return;
+      if (document.querySelector('.tour-layer')) return;
       go('home');
-      mountTour(phone, store.get().language,
+      mountTour(document.getElementById('stage'), store.get().language,
         () => store.set({ ...store.get(), tourDone: true }), { onScreen: go });
       return;
     }
@@ -3670,6 +3919,18 @@ function start(getApp, store) {
   return { draw, go };
 }
 
+/**
+ * Back to the very first screen.
+ *
+ * Someone unfamiliar with apps can walk into the demo and have no idea how to
+ * get out. Clearing the saved state and reloading is the one action that
+ * always works. Notes live under their own key and survive it.
+ */
+function restartDemo() {
+  try { window.localStorage.removeItem('woneco.state.v1'); } catch { /* ignore */ }
+  window.location.reload();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const screen = document.getElementById('screen');
   try {
@@ -3679,6 +3940,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const app = boot(state.profile);
     let appView = null;
     let accessView = null;
+    // Assigned once the notes panel exists; the store may fire before then.
+    let drawNotesRef = null;
     const headerBar = document.getElementById('header');
 
     const store = {
@@ -3691,15 +3954,27 @@ document.addEventListener('DOMContentLoaded', () => {
         // language switch would change nothing on screen.
         if (appView) appView.draw();
         else { headerBar.innerHTML = accessHeader(state.language); accessView?.redraw(); }
+        drawNotesRef?.();
       },
     };
 
     // On the header itself, so it survives every redraw of its contents and
     // works on the access screens, which have no drawer.
     headerBar.addEventListener('click', (event) => {
+      if (event.target.closest('[data-restart]')) { restartDemo(); return; }
       const lang = event.target.closest('[data-lang]')?.dataset.lang;
       if (lang && lang !== state.language) store.set({ ...state, language: lang });
     });
+
+    // The notes panel beside the phone, saved under its own key so restarting
+    // the demo never throws away what someone typed.
+    const side = document.getElementById('side');
+    const drawNotes = () => { side.innerHTML = renderNotes(loadNotes(window.localStorage), state.language); };
+    side.addEventListener('input', (event) => {
+      if ('notes' in (event.target.dataset || {})) saveNotes(window.localStorage, event.target.value);
+    });
+    drawNotesRef = drawNotes;
+    drawNotes();
 
     // The brief's screen order: registration - which is where the consent
     // journey lives - or login for a returning tenant, then the demo-only role
@@ -3716,7 +3991,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // in a wall of introduction pages in front of it. He runs every time
         // rather than only on first open: this is a demonstrator, and whoever
         // is being shown it has not seen the introduction before.
-        mountTour(document.getElementById('phone'), store.get().language,
+        mountTour(document.getElementById('stage'), store.get().language,
           () => store.set({ ...store.get(), tourDone: true }),
           { onScreen: appView.go });
       },
