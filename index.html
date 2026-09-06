@@ -67,6 +67,9 @@ body {
 }
 
 #screen { flex: 1; overflow-y: auto; padding: var(--gap); }
+/* Settings > Grotere letters. The screen scales as a whole so fixed-size
+   figures and cards grow with the text instead of colliding with it. */
+#phone[data-large="true"] #screen { zoom: 1.15; }
 #tabs { flex: none; }
 
 #boot-status {
@@ -239,6 +242,8 @@ body {
         border: 2px solid var(--green-600); background: var(--surface);
         color: var(--green-900); font-size: 17px; font-weight: 600; }
 .chip.on { background: var(--green-600); color: #fff; }
+.field input[aria-invalid="true"] { border-color: #b3261e; }
+.field-error { margin: 4px 0 10px; color: #b3261e; font-size: 15px; font-weight: 600; }
 .field input[type="text"] { font-size: 18px; padding: 8px 10px; border-radius: 8px;
         border: 2px solid var(--green-600); width: 55%; }
 .tree-thirsty, .tree-wilting { transition: none; }
@@ -320,7 +325,7 @@ body {
 .rung.current .rung-status { color: var(--green-600); font-weight: 700; }
 
 /* The level chip on the home screen opens the ladder, so it is a button. */
-button.stage { border: none; font-family: inherit; }
+button.stage { border: none; font-family: inherit; cursor: pointer; min-height: 36px; padding: 6px 14px; }
 button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset: 2px; }
 
 /* --- The four screens that are not on the bottom bar, listed in Profile --- */
@@ -357,7 +362,7 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
 #side { display: none; }
 
 /* --- Wide laptop: notes beside the phone --- */
-@media (min-width: 1100px) {
+@media (min-width: 900px) and (pointer: fine) {
   #stage { flex-direction: row; align-items: center; justify-content: center; gap: 32px; }
   #side { display: block; width: 340px; align-self: center;
           background: var(--surface); border-radius: var(--radius); padding: 18px;
@@ -390,7 +395,11 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
 .back-menu span:first-child { font-size: 20px; line-height: 1; }
 .back-menu:hover { background: var(--green-100); }
 .back-menu:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 420px) { .back-menu-label { display: none; } }
+@media (max-width: 420px) {
+  .back-menu-label { display: none; }
+  /* Without its label the button is an arrow alone; keep it a full thumb-size target. */
+  .back-menu { min-width: 40px; min-height: 40px; justify-content: center; padding: 4px; }
+}
 
 /* Watt himself, next to the menu button: tap him and the walk starts again. */
 .watt-button { width: 36px; height: 36px; flex: none; padding: 3px; cursor: pointer;
@@ -430,7 +439,7 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
 
 /* With the notes panel on screen there is no room to Watt's right, so he moves
    to the left of the phone - and the phone shifts right to make that room. */
-@media (min-width: 1100px) {
+@media (min-width: 900px) and (pointer: fine) {
   #stage[data-tour-active] { justify-content: flex-end; padding-right: 32px; }
 }
 
@@ -469,11 +478,20 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
   #stage[data-journey] .journey-text { font-size: 15px; }
 }
 
+/* On a phone the app fills the screen, so a panel after it was never seen.
+   The text comes first there; the screen it describes follows underneath. */
+@media (max-width: 799px), (pointer: coarse) and (max-width: 1024px) {
+  #stage[data-journey] #journey { order: -1; border-radius: 0; box-shadow: none;
+    padding: 20px 16px 16px; border-bottom: 1px solid #d3ddd6; }
+  #stage[data-journey] .journey-title { font-size: 22px; }
+  #stage[data-journey] .journey-text { font-size: 15px; }
+}
+
 /* --- Notes behind a small button (note §5) --- */
 .notes-toggle { cursor: pointer; font: inherit; font-size: 15px; font-weight: 700; color: var(--green-900);
   background: var(--surface); border: 2px solid var(--green-600); border-radius: 999px; padding: 6px 14px; }
 .notes-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-@media (min-width: 1100px) { #side { background: transparent; box-shadow: none; padding: 0; }
+@media (min-width: 900px) and (pointer: fine) { #side { background: transparent; box-shadow: none; padding: 0; }
   #side .side-title, #side .side-note, #side .notes-box { background: var(--surface); }
   #side .notes-box { margin-top: 10px; }
   /* Closed, the button waits in the corner and the phone stays centred; only
@@ -2367,7 +2385,7 @@ const SCREEN_HELP = Object.freeze([
           body: 'Every tip, ordered by what it saves you.' },
   }),
   Object.freeze({
-    id: 'tab-doelen', screen: 'levels', anchor: '.ladder',
+    id: 'tab-doelen', screen: 'levels', anchor: '.rung.current',
     nl: { title: 'Doelen',
           body: 'Alle zes de stappen van je boom, en waar je nu staat.' },
     en: { title: 'Goals',
@@ -2388,7 +2406,7 @@ const SCREEN_HELP = Object.freeze([
           body: 'Messages, larger text and the language.' },
   }),
   Object.freeze({
-    id: 'tab-berichten', screen: 'notifications', anchor: '.notices',
+    id: 'tab-berichten', screen: 'notifications', anchor: '.notice',
     nl: { title: 'Berichten',
           body: 'Wat ik je de afgelopen twee weken liet weten.' },
     en: { title: 'Messages',
@@ -2591,6 +2609,11 @@ const BUILD_PERIODS = Object.freeze([
 /** These two are text; everything else about the home is a number. */
 const TEXT_FIELDS = Object.freeze(['postcode', 'buildPeriod']);
 
+/** A postcode area is exactly four digits; anything else is a typing slip. */
+function isPostcodeArea(value) {
+  return /^\d{4}$/.test(String(value ?? '').trim());
+}
+
 /**
  * The questions about the home, on one screen.
  *
@@ -2602,7 +2625,7 @@ const TEXT_FIELDS = Object.freeze(['postcode', 'buildPeriod']);
  * "Weet ik niet" is a real answer to the age question. Forcing a guess would
  * put worse data in than admitting the gap.
  */
-function homeControls(state, lang) {
+function homeControls(state, lang, errors = {}) {
   // Read straight from state - no local fallback - so what is shown is always
   // what is stored, even if the tenant never touches these controls.
   const { postcode, rooms, floor, buildPeriod, occupants } = state.home;
@@ -2614,7 +2637,10 @@ function homeControls(state, lang) {
   return `<div class="home-details">
     <label class="field"><span>${lang === 'en' ? 'Postcode area (4 digits)' : 'Postcodegebied (4 cijfers)'}</span>
       <input type="text" inputmode="numeric" maxlength="4" size="4"
-             data-home="postcode" value="${postcode}"></label>
+             data-home="postcode" value="${postcode}"${errors.postcode ? ' aria-invalid="true"' : ''}></label>
+    ${errors.postcode ? `<p class="field-error" role="alert">${lang === 'en'
+      ? 'Enter the four digits of your postcode, for example 6413.'
+      : 'Vul de vier cijfers van je postcode in, bijvoorbeeld 6413.'}</p>` : ''}
     <label class="field"><span>${lang === 'en' ? 'Rooms' : 'Aantal kamers'}</span>
       <select data-home="rooms">${numbers([1, 2, 3, 4, 5, 6], rooms)}</select></label>
     <label class="field"><span>${lang === 'en' ? 'Which floor' : 'Welke verdieping'}</span>
@@ -2627,7 +2653,7 @@ function homeControls(state, lang) {
 }
 
 /** Full markup for one onboarding step. Pure - no DOM access. */
-function renderOnboarding(index, state, lang = 'nl') {
+function renderOnboarding(index, state, lang = 'nl', errors = {}) {
   const step = introStep(index);
   const i = INTRO_STEPS.indexOf(step);
   const isLast = i === TOTAL_INTRO_STEPS - 1;
@@ -2636,7 +2662,7 @@ function renderOnboarding(index, state, lang = 'nl') {
   if (step.kind === 'language') controls = languageControls(lang);
   else if (step.kind === 'consent') controls = consentControls(state, lang);
   else if (step.kind === 'meter') controls = meterControls(lang);
-  else if (step.kind === 'home') controls = homeControls(state, lang);
+  else if (step.kind === 'home') controls = homeControls(state, lang, errors);
 
   return `<section class="onboarding" data-step="${step.id}" data-index="${i}">
     ${progress(i, lang)}
@@ -2662,13 +2688,14 @@ function renderOnboarding(index, state, lang = 'nl') {
 function mountOnboarding(container, initialState, lang, onFinish) {
   let index = 0;
   let state = initialState;
+  let errors = {};
   // `lang` may be a function, so the header's NL/EN switch can re-render this
   // step in place. It has to: this is the first screen anyone sees, and until
   // they are through it there is no Profile screen to change the language on.
   const language = () => (typeof lang === 'function' ? lang() : lang);
 
   function draw() {
-    container.innerHTML = renderOnboarding(index, state, language());
+    container.innerHTML = renderOnboarding(index, state, language(), errors);
   }
 
   container.addEventListener('change', (event) => {
@@ -2682,6 +2709,7 @@ function mountOnboarding(container, initialState, lang, onFinish) {
       const raw = event.target.value;
       const value = TEXT_FIELDS.includes(homeKey) ? raw.trim() : Number(raw);
       state = { ...state, home: { ...state.home, [homeKey]: value } };
+      if (homeKey === 'postcode' && errors.postcode && isPostcodeArea(value)) { errors = {}; draw(); }
     }
   });
 
@@ -2691,7 +2719,17 @@ function mountOnboarding(container, initialState, lang, onFinish) {
     if (action === 'next') { index = Math.min(TOTAL_INTRO_STEPS - 1, index + 1); draw(); }
     else if (action === 'back') { index = Math.max(0, index - 1); draw(); }
     else if (action === 'connect') { event.target.textContent = language() === 'en' ? 'Connected' : 'Gekoppeld'; }
-    else if (action === 'finish') { onFinish({ ...state, onboarded: true }); }
+    else if (action === 'finish') {
+      // A slip in the one typed field is caught here, with a sentence under the
+      // field, rather than stored and quietly shown as the "postcode area".
+      if (!isPostcodeArea(state.home.postcode)) {
+        errors = { postcode: true };
+        draw();
+        container.querySelector('[data-home="postcode"]')?.focus();
+        return;
+      }
+      onFinish({ ...state, onboarded: true });
+    }
   });
 
   draw();
@@ -2798,7 +2836,7 @@ function renderMenu(lang = 'nl') {
     // A genuine reset lives here and nowhere else. On every other screen the
     // top-left button returns to this menu without erasing anything.
     + '<button class="menu-reset" data-restart>' + say(
-      'Demo opnieuw beginnen (wist alles)', 'Start the demo over (clears everything)', lang)
+      'Demo opnieuw beginnen (wist alles, behalve je notities)', 'Start the demo over (clears everything except your notes)', lang)
     + '</button>'
     + '</section>';
 }
@@ -4293,6 +4331,8 @@ document.addEventListener('DOMContentLoaded', () => {
         journeyPanel.innerHTML = renderJourneyPanel(step, journeyIndex, state.language);
         if (step.screen === 'dashboard') drawDashboardScreen();
         else appView.go(step.screen);
+        // On a phone the text sits above the screen; a new moment starts at its text.
+        window.scrollTo({ top: 0 });
       };
       redrawView();
     }
