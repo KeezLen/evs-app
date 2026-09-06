@@ -381,15 +381,43 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
 .tour-bubble[data-side="true"] { right: auto; width: 340px; }
 .tour-bubble[data-side="false"] { right: auto; width: 366px; max-width: calc(100vw - 24px); }
 
-/* Back to the beginning, top left, where someone who is lost will look. */
-.restart-button { display: flex; align-items: center; gap: 5px; flex: none;
-                  min-height: 34px; padding: 4px 10px; cursor: pointer;
-                  border: 2px solid var(--green-600); border-radius: 999px;
-                  background: transparent; color: var(--green-900);
-                  font-family: inherit; font-size: 14px; font-weight: 600; }
-.restart-button:hover { background: var(--green-100); }
-.restart-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 420px) { .restart-label { display: none; } }
+/* Back to the demonstration menu, top left, where someone who is lost will look. */
+.back-menu { display: flex; align-items: center; gap: 4px; flex: none;
+             min-height: 34px; padding: 4px 10px 4px 8px; cursor: pointer;
+             border: 2px solid var(--green-600); border-radius: 999px;
+             background: transparent; color: var(--green-900);
+             font-family: inherit; font-size: 14px; font-weight: 600; }
+.back-menu span:first-child { font-size: 20px; line-height: 1; }
+.back-menu:hover { background: var(--green-100); }
+.back-menu:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 420px) { .back-menu-label { display: none; } }
+
+/* Watt himself, next to the menu button: tap him and the walk starts again. */
+.watt-button { width: 36px; height: 36px; flex: none; padding: 3px; cursor: pointer;
+               border: 2px solid var(--green-600); border-radius: 50%; background: transparent;
+               display: inline-flex; align-items: center; justify-content: center; }
+.watt-button svg { width: 100%; height: 100%; display: block; }
+.watt-button:hover { background: var(--green-100); }
+.watt-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* --- The demonstration menu (feedback note §5) --- */
+.menu { display: flex; flex-direction: column; min-height: 100%; }
+.menu-title { margin: 6px 0 .3em; font-size: 24px; line-height: 1.2; color: var(--green-900); text-wrap: balance; }
+.menu-lead { margin: 0 0 1em; font-size: 17px; }
+.menu-entries { display: flex; flex-direction: column; gap: 12px; }
+.menu-entry { display: flex; flex-direction: column; gap: 4px; text-align: left; cursor: pointer;
+              padding: 14px 16px; background: var(--green-100); border: 2px solid transparent;
+              border-radius: var(--radius); color: var(--ink); font-family: inherit; }
+.menu-entry strong { font-size: 19px; color: var(--green-900); }
+.menu-entry > span { font-size: 15px; color: #3c4d43; }
+.menu-entry:hover, .menu-entry:focus-visible { border-color: var(--green-600); outline: none; }
+.menu-notice { display: block; margin-top: 6px; padding: 8px 10px; font-size: 13px; font-weight: 700;
+               color: #8a5512; background: #fdf6e7; border-left: 4px solid #b4711a; border-radius: 6px; }
+.menu-reset { margin-top: auto; padding: 12px 0 4px; align-self: center; cursor: pointer;
+              background: none; border: none; font-family: inherit; font-size: 14px;
+              color: #5c665f; text-decoration: underline; }
+.menu-reset:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.demo-notice { font-weight: 700; }
 
 /* --- The tour must not sit on the notes, or block them --- */
 /* The layer spans the stage so the bubble can sit beside the phone, but only
@@ -406,6 +434,55 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
   #stage[data-tour-active] { justify-content: flex-end; padding-right: 32px; }
 }
 
+/* --- The executive route: the phone, and one calm panel beside it --- */
+#journey { display: none; }
+#stage[data-journey] #journey { display: flex; flex-direction: column; width: 440px; max-width: 100%;
+  min-height: 560px; padding: 28px 30px 24px; background: var(--surface); border-radius: 22px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.14); align-self: center; }
+#stage[data-journey] #side { display: none; }
+.journey-eyebrow { margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--green-600); }
+.journey-progress { display: flex; gap: 6px; margin: 0 0 18px; }
+.journey-seg { flex: 1; height: 4px; border-radius: 2px; background: #dfe6e1; }
+.journey-seg.on { background: var(--green-600); }
+.journey-title { margin: 0 0 14px; font-size: 26px; line-height: 1.2; color: var(--green-900); text-wrap: balance; }
+.journey-heading { margin: 12px 0 2px; font-size: 13px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: #5c665f; }
+.journey-text { margin: 0; font-size: 16px; line-height: 1.55; }
+.journey-next { margin: 16px 0 0; font-size: 15px; font-weight: 700; color: var(--green-900); }
+.journey-controls { display: flex; gap: 10px; margin-top: auto; padding-top: 22px; }
+.journey-controls .btn { flex: none; min-height: 42px; font-size: 16px; padding: 8px 16px; }
+.journey-controls .btn:last-child { margin-left: auto; }
+.journey-menu { border-color: transparent; color: #5c665f; padding-left: 4px; }
+/* The route is presented on laptops and projectors, and 1024 wide is common
+   there. Side by side from 800px so nobody scrolls to find the text, with the
+   panel taking the width the phone leaves over. */
+@media (min-width: 800px) and (pointer: fine), (min-width: 1025px) {
+  #stage[data-journey] { flex-direction: row; align-items: center; justify-content: center;
+    gap: clamp(24px, 4vw, 48px); padding: 24px 32px; }
+  #stage[data-journey] #journey { flex: 0 1 440px; min-width: 320px; min-height: 0;
+    max-height: calc(100vh - 48px); overflow-y: auto; }
+}
+@media (max-width: 1099px) and (pointer: fine) {
+  #stage[data-journey] #journey { padding: 22px 24px 20px; }
+  #stage[data-journey] .journey-title { font-size: 22px; }
+  #stage[data-journey] .journey-text { font-size: 15px; }
+}
+
+/* --- Notes behind a small button (note §5) --- */
+.notes-toggle { cursor: pointer; font: inherit; font-size: 15px; font-weight: 700; color: var(--green-900);
+  background: var(--surface); border: 2px solid var(--green-600); border-radius: 999px; padding: 6px 14px; }
+.notes-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (min-width: 1100px) { #side { background: transparent; box-shadow: none; padding: 0; }
+  #side .side-title, #side .side-note, #side .notes-box { background: var(--surface); }
+  #side .notes-box { margin-top: 10px; }
+  /* Closed, the button waits in the corner and the phone stays centred; only
+     an opened notepad earns a place beside the phone. */
+  #side:not(.open) { position: fixed; right: 24px; bottom: 24px; width: auto; }
+  #side:not(.open) .notes-toggle { box-shadow: 0 4px 16px rgba(0, 0, 0, .12); }
+  /* Watt pushes the phone to the right edge; the button steps out of its way. */
+  #stage[data-tour-active] #side:not(.open) { right: auto; left: 24px; } }
+
 </style>
 </head>
 <body>
@@ -416,6 +493,7 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
     <footer id="tabs"></footer>
     <div id="nav"></div>
   </div>
+  <aside id="journey"></aside>
   <aside id="side"></aside>
 </div>
 <script type="module">
@@ -514,6 +592,13 @@ const STRINGS = Object.freeze({
   },
 
   'error.boot': { nl: 'Opstartfout: {message}', en: 'Startup error: {message}' },
+
+  // Feedback note of 3 September 2026, §3.4, verbatim. Shown wherever the
+  // impact dashboard is offered, because its figures read as pilot results.
+  'demo.notice': {
+    nl: 'DEMONSTRATIE — alle getoonde cijfers, huishoudens en resultaten zijn fictieve voorbeeldwaarden. Er heeft nog geen pilot plaatsgevonden.',
+    en: 'DEMONSTRATION — all figures, households and results shown are fictitious sample values. No pilot has taken place yet.',
+  },
 });
 
 /**
@@ -1442,9 +1527,16 @@ function dailyRecommendation(expectedSeries, readings, tips) {
   const elecDrift = drift((d) => d.elec_kwh, PRICE_ELEC_EUR_PER_KWH);
 
   // Under-heating: never answer a cold house by suggesting less heating.
-  const coldDays = recentActual.filter(
-    (r, i) => isBelowComfortFloor(recentExpected[i].gas_m3, r.gas_m3)).length;
-  const underHeating = coldDays > recentActual.length / 2;
+  //
+  // Counted over the WHOLE window, not the recent week, and on the same rule
+  // the warning card uses (any day below the floor). The first version looked
+  // only at the last seven days: the demo household's cold spell sat earlier
+  // than that, so the home screen warned about under-heating and, on the same
+  // screen, suggested turning the thermostat down. The feedback note of
+  // 3 September 2026 caught it. Whatever the card says, the advice must agree.
+  const coldDays = readings.filter(
+    (r, i) => isBelowComfortFloor(expectedSeries[i].gas_m3, r.gas_m3)).length;
+  const underHeating = coldDays > 0;
 
   let reason;
   let candidates;
@@ -1744,8 +1836,10 @@ const CONSENT_ITEMS = Object.freeze([
   // Location rather than "weather data": the app asks where you live and
   // looks the weather up from that. Naming the thing actually collected is
   // the honest version, and it is what a tenant can meaningfully agree to.
-  Object.freeze({ key: 'location', nl: 'Je postcode, om het weer bij jou op te halen',
-                  en: 'Your postcode, to look up the weather where you live' }),
+  // "Postcode area", not "postcode": only the four digits are asked for, and
+  // saying so avoids a needless worry about being identifiable (note §3.3).
+  Object.freeze({ key: 'location', nl: 'Je postcodegebied (4 cijfers), om het weer bij jou op te halen',
+                  en: 'Your postcode area (4 digits), to look up the weather where you live' }),
   Object.freeze({ key: 'homeDetails', nl: 'Gegevens over je woning', en: 'Details about your home' }),
   Object.freeze({ key: 'shareAggregated', nl: 'Anoniem meetellen in de buurtcijfers', en: 'Count anonymously in neighbourhood figures' }),
 ]);
@@ -1778,12 +1872,6 @@ function defaultState() {
       occupants: 1,
     },
     shieldsUsed: 0,
-
-    // Registration and login are mockups. This flag is the ONLY thing they
-    // leave behind: no address, no password, nothing that identifies anyone.
-    registered: false,
-    // Demo device, not a product feature. See js/screens/access.js.
-    role: null,
 
     notifications: true,
     largeText: false,
@@ -2149,23 +2237,26 @@ const INTRO_STEPS = Object.freeze([
   Object.freeze({
     id: 'gegevens', kind: 'info',
     nl: { title: 'Welke gegevens ik gebruik',
-          body: 'Je gas- en stroomstanden van de slimme meter, je postcode, en een paar dingen over je woning. Meer niet.' },
+          body: 'Je gas- en stroomstanden van de slimme meter, je postcodegebied (de vier cijfers), en een paar dingen over je woning. Meer niet.' },
     en: { title: 'Which data I use',
-          body: 'Your gas and electricity readings from the smart meter, your postcode, and a few things about your home. Nothing more.' },
+          body: 'Your gas and electricity readings from the smart meter, your postcode area (the four digits), and a few things about your home. Nothing more.' },
   }),
   Object.freeze({
     id: 'waarom', kind: 'info',
     nl: { title: 'Waarom ik die nodig heb',
-          body: 'Met je postcode zoek ik het weer bij jou op. Zo zie ik of je minder gebruikte dan verwacht, of dat het gewoon een zachte week was. Zonder dat kan ik je niets eerlijks vertellen.' },
+          body: 'Met je postcodegebied zoek ik het weer bij jou op. Zo zie ik of je minder gebruikte dan verwacht, of dat het gewoon een zachte week was. Zonder dat kan ik je niets eerlijks vertellen.' },
     en: { title: 'Why I need them',
-          body: 'Your postcode lets me look up the weather where you live. That is how I tell whether you used less than expected, or whether it was simply a mild week. Without it I cannot tell you anything honest.' },
+          body: 'Your postcode area lets me look up the weather where you live. That is how I tell whether you used less than expected, or whether it was simply a mild week. Without it I cannot tell you anything honest.' },
   }),
   Object.freeze({
     id: 'keuze', kind: 'consent',
+    // Wording from the feedback note of 3 September 2026, §3.2. The earlier
+    // "the app simply carries on working" was too absolute: without meter
+    // data the core of the app - your own consumption and saving - is gone.
     nl: { title: 'Jouw keuze',
-          body: 'Je bepaalt zelf wat je deelt. Zeg je bij iets nee, dan werkt de app gewoon door. Ik weet dan alleen wat minder.' },
+          body: 'Je kiest altijd zelf wat je deelt. Zonder meterstanden kun je de algemene tips blijven gebruiken, maar kunnen we je verbruik en je persoonlijke besparing niet berekenen.' },
     en: { title: 'Your choice',
-          body: 'You decide what you share. If you say no to something the app still works. I simply know a little less.' },
+          body: 'You can always choose for yourself what you share. Without meter data you can continue to use the general tips, but we cannot calculate your consumption and your personal savings.' },
   }),
   Object.freeze({
     id: 'oplevert', kind: 'info',
@@ -2209,7 +2300,7 @@ function introStep(index) {
  * `anchor` is a CSS selector on the live screen. `screen` names the section
  * the tour must open before showing the step.
  */
-const TOUR_STEPS = Object.freeze([
+const SCREEN_HELP = Object.freeze([
   Object.freeze({
     id: 'welkom', screen: 'home', anchor: null,
     nl: { title: 'Hoi, ik ben ' + ASSISTANT_NAME,
@@ -2319,6 +2410,14 @@ const TOUR_STEPS = Object.freeze([
   }),
 ]);
 
+/**
+ * Watt's tour walks the whole app, screen by screen: the same entries the
+ * info button reads, in order, so the two can never drift. The feedback note
+ * of 3 September 2026 (§4 P2) asked for a shorter walk; the team chose to
+ * keep the full one, because a screen an older resident never finds is a
+ * screen that does not exist. Skippable at every step.
+ */
+const TOUR_STEPS = SCREEN_HELP;
 const TOTAL_TOUR_STEPS = TOUR_STEPS.length;
 
 /** Steps that describe the app rather than the tour itself. */
@@ -2333,7 +2432,7 @@ const FRAMING_STEPS = Object.freeze(['welkom', 'klaar']);
  * has quietly drifted from it.
  */
 function helpFor(screenId) {
-  return TOUR_STEPS.filter((step) =>
+  return SCREEN_HELP.filter((step) =>
     step.screen === screenId && !FRAMING_STEPS.includes(step.id));
 }
 
@@ -2377,10 +2476,12 @@ const HELP_TOPICS = Object.freeze([
  */
 function comfortIntervention(floorDays, totalDays, lang) {
   if (floorDays <= 0) return null;
+  // Leads with the sentence the feedback note asked for, so the rule lands
+  // before the numbers do.
   if (lang === 'en') {
-    return 'On ' + floorDays + ' of ' + totalDays + ' days you heated less than is healthy for your home. Those days do not count towards your tree. Warmth is not something to save on.';
+    return 'Heating too little does not earn points. On ' + floorDays + ' of ' + totalDays + ' days you heated less than is healthy for your home. Those days do not count towards your tree, and today’s advice is not about heating. Warmth is not something to save on.';
   }
-  return 'Op ' + floorDays + ' van de ' + totalDays + ' dagen stookte je minder dan gezond is voor je woning. Die dagen tellen niet mee voor je boom. Warmte is niets om op te besparen.';
+  return 'Te weinig stoken levert geen punten op. Op ' + floorDays + ' van de ' + totalDays + ' dagen stookte je minder dan gezond is voor je woning. Die dagen tellen niet mee voor je boom, en je advies van vandaag gaat niet over verwarmen. Warmte is niets om op te besparen.';
 }
 
 // ---- js/screens/onboarding.js ----
@@ -2404,9 +2505,10 @@ const ONBOARDING_LABELS = {
   connect: { nl: 'Meter koppelen', en: 'Connect meter' },
   skip: { nl: 'Overslaan', en: 'Skip' },
   step: { nl: 'Stap {n} van {total}', en: 'Step {n} of {total}' },
+  // Feedback note §3.2: "keeps working" was too absolute. Say what stops.
   noBlocking: {
-    nl: 'Je kunt altijd nee zeggen. De app blijft werken.',
-    en: 'You can always say no. The app keeps working.',
+    nl: 'Je kiest altijd zelf. Zonder meterstanden blijven de algemene tips werken, maar je verbruik en je besparing kunnen we dan niet berekenen.',
+    en: 'You always choose. Without meter data the general tips keep working, but we cannot calculate your consumption or your savings.',
   },
 };
 
@@ -2510,7 +2612,7 @@ function homeControls(state, lang) {
     `<option value="${v}"${v === selected ? ' selected' : ''}>${v}</option>`).join('');
 
   return `<div class="home-details">
-    <label class="field"><span>Postcode</span>
+    <label class="field"><span>${lang === 'en' ? 'Postcode area (4 digits)' : 'Postcodegebied (4 cijfers)'}</span>
       <input type="text" inputmode="numeric" maxlength="4" size="4"
              data-home="postcode" value="${postcode}"></label>
     <label class="field"><span>${lang === 'en' ? 'Rooms' : 'Aantal kamers'}</span>
@@ -2596,41 +2698,264 @@ function mountOnboarding(container, initialState, lang, onFinish) {
   return { draw };
 }
 
-// ---- js/screens/access.js ----
 /**
- * Registration, login and the role selector (demonstrator brief, section 3).
+ * The consent journey as a resident would meet it, run from inside the app.
  *
- * These three screens sit in front of the dashboard in the brief's screen map.
- * All three are mockups: nothing is sent anywhere and no credential is ever
- * stored. The password field exists because the brief asks for it; its value
- * is never read back out of the field, and `state` gains a boolean and a role
- * and nothing else - not the address, not the password.
+ * It no longer sits in front of the demonstration (feedback note §2): the
+ * menu's "resident app" entry lands on the home screen, and this is reached
+ * from Profile by whoever wants to see how a resident signs up.
  *
- * The role selector is explicitly "a demo-only device, not a real product
- * feature". The screen says so itself, so a presenter cannot describe it to a
- * municipality as something the product does.
+ * Mounted into its own wrapper so its listeners die with it. Mounting twice
+ * into the same container would otherwise stack two click handlers, and every
+ * "Verder" would advance two steps.
+ *
+ * On finish, only the fields the journey owns are merged onto current state.
+ * Writing the whole captured object back would undo anything changed since it
+ * mounted - the language, for one.
+ */
+function mountConsentJourney(container, store, onDone) {
+  const wrapper = document.createElement('div');
+  container.innerHTML = '';
+  container.appendChild(wrapper);
+
+  const view = mountOnboarding(wrapper, store.get(), () => store.get().language, (next) => {
+    store.set(mergeJourneyResult(store.get(), next));
+    onDone();
+  });
+  return view;
+}
+
+/**
+ * What the journey may write back: consent, the home answers, and the fact
+ * that it was completed. Nothing else - it captured `current` when it mounted,
+ * and anything changed since (the language, for one) must survive it.
+ */
+function mergeJourneyResult(current, next) {
+  return { ...current, consent: next.consent, home: next.home, onboarded: true };
+}
+
+// ---- js/screens/menu.js ----
+/**
+ * The demonstration menu - the first screen, and the one every other screen
+ * can get back to.
+ *
+ * Feedback note of 3 September 2026, §2 and §5: the visitor was led through a
+ * nine-step onboarding, an account screen, a perspective choice and a
+ * fifteen-step tour before reaching the app, and had no way back. The note
+ * asks for three clear entry points instead, with the title, subtitle and
+ * entries it spells out. They are used verbatim.
+ *
+ * Content only - no DOM. main.js renders it and routes the choice.
  */
 
 
+const MENU_ENTRIES = Object.freeze([
+  Object.freeze({
+    id: 'journey',
+    nl: Object.freeze({ title: 'Bekijk de klantreis van een bewoner',
+                        body: 'Een korte route van vijf momenten die logisch op elkaar volgen.' }),
+    en: Object.freeze({ title: 'View a resident’s customer journey',
+                        body: 'A short route of five moments that follow on from one another.' }),
+  }),
+  Object.freeze({
+    id: 'app',
+    nl: Object.freeze({ title: 'Bekijk de bewonersapp',
+                        body: 'Watt, de batterij-assistent, leidt je kort rond. Daarna vrij te verkennen via Start, Besparing, Uitdagingen, Tips en Profiel.' }),
+    en: Object.freeze({ title: 'View the resident app',
+                        body: 'Watt, the battery assistant, shows you round briefly. Then free to explore via Home, Savings, Challenges, Tips and Profile.' }),
+  }),
+  Object.freeze({
+    id: 'dashboard',
+    nl: Object.freeze({ title: 'Bekijk het impactdashboard',
+                        body: 'Meteen naar de keuze tussen gemeente en woningcorporatie.' }),
+    en: Object.freeze({ title: 'View the impact dashboard',
+                        body: 'Straight to the choice between municipality and housing association.' }),
+    // The note wants the demonstration warning attached to this route.
+    notice: true,
+  }),
+]);
+
+/** The menu. Pure - no DOM access, no state. */
+function renderMenu(lang = 'nl') {
+  const entries = MENU_ENTRIES.map((entry) => {
+    const copy = entry[lang] || entry.nl;
+    return '<button class="menu-entry" data-menu="' + entry.id + '">'
+      + '<strong>' + copy.title + '</strong>'
+      + '<span>' + copy.body + '</span>'
+      + (entry.notice ? '<span class="menu-notice">' + t('demo.notice', lang) + '</span>' : '')
+      + '</button>';
+  }).join('');
+
+  return '<section class="menu" data-view="menu">'
+    + '<h1 class="menu-title">' + say(
+      'Welkom bij de demonstratie van het Energieverdienspel',
+      'Welcome to the demonstration of the Energieverdienspel', lang) + '</h1>'
+    + '<p class="menu-lead">' + say(
+      'Kies welk onderdeel je wilt bekijken. Alle gegevens en resultaten in deze demonstratie zijn fictief.',
+      'Choose which section you would like to view. All data and results in this demonstration are fictitious.', lang)
+    + '</p>'
+    + '<div class="menu-entries">' + entries + '</div>'
+    // A genuine reset lives here and nowhere else. On every other screen the
+    // top-left button returns to this menu without erasing anything.
+    + '<button class="menu-reset" data-restart>' + say(
+      'Demo opnieuw beginnen (wist alles)', 'Start the demo over (clears everything)', lang)
+    + '</button>'
+    + '</section>';
+}
+
+// ---- js/screens/journey.js ----
+/**
+ * The executive route: five moments, explained beside the phone.
+ *
+ * Feedback note of 3 September 2026, §5. Not a bubble over the app - the
+ * space to the left and right of the phone carries the explanation, as the
+ * note describes: left, where the visitor is and what the resident sees;
+ * right, why this section matters and what comes next; above, "Stap 2 van 5",
+ * Vorige, Volgende and the way back to the demonstration menu.
+ *
+ * The five moments are the note's, in its order. Content only - no DOM.
+ */
 
 
+const JOURNEY_STEPS = Object.freeze([
+  Object.freeze({
+    id: 'why', title: { nl: 'Waarom het Energieverdienspel bestaat', en: 'Why the Energieverdienspel exists' }, screen: 'info',
+    nl: Object.freeze({
+      where: 'Een nieuwe bewoner krijgt eerst een korte rondleiding van Watt, de batterij-assistent. Die slaan we in deze route over; je ziet hem bij “Bekijk de bewonersapp”. Hier kijk je naar de uitleg in de app zelf, onder Profiel › Info: wat het Energieverdienspel is, voor wie het bedoeld is en wat het uitdrukkelijk niet is.',
+      why: 'In Heerlen leeft naar schatting 13,4% van de huishoudens in energiearmoede, ruim het dubbele van het landelijke gemiddelde. Een huurder kan het gebouw niet repareren; het eigen gebruik wel. Daar richt de app zich op.',
+      next: 'Volgende: het persoonlijke startscherm van een bewoner.',
+    }),
+    en: Object.freeze({
+      where: 'A new resident first gets a short walk-through from Watt, the battery assistant. This route skips it; you meet him under “View the resident app”. Here you are looking at the explanation inside the app itself, under Profile › Info: what the Energieverdienspel is, who it is for, and what it explicitly is not.',
+      why: 'In Heerlen an estimated 13.4% of households live in energy poverty, more than double the national average. A tenant cannot fix the building; their own use they can. That is what the app targets.',
+      next: 'Next: a resident’s personal home screen.',
+    }),
+  }),
+  Object.freeze({
+    id: 'home', title: { nl: 'Het persoonlijke startscherm', en: 'The personal home screen' }, screen: 'home',
+    nl: Object.freeze({
+      where: 'Het startscherm. De boom groeit een stap bij elke drempel in bespaarde euro’s, het bedrag eronder is wat tot nu toe telt, en de kaart daaronder is het advies van vandaag.',
+      why: 'Eén blik zegt of het goed gaat, zonder een cijfer te hoeven lezen. Euro’s vooraan, omdat de bewoner daar het verschil merkt. Alle bedragen hier zijn voorbeeldwaarden.',
+      next: 'Volgende: het advies van vandaag, en waarom juist dit.',
+    }),
+    en: Object.freeze({
+      where: 'The home screen. The tree grows a stage at each threshold of saved euros, the amount below it is what counts so far, and the card beneath is today’s advice.',
+      why: 'One glance says whether things are going well, with no figure to read. Euros first, because that is where the resident notices the difference. Every amount here is a sample value.',
+      next: 'Next: today’s advice, and why this one.',
+    }),
+  }),
+  Object.freeze({
+    id: 'advice', title: { nl: 'Eén veilig advies per dag', en: 'One safe piece of advice a day' }, screen: 'home',
+    nl: Object.freeze({
+      where: 'De kaart “Tip van vandaag”. Eén advies per dag, gekozen op het eigen verbruik van dit huishouden, met daaronder in één zin waarom.',
+      why: 'Eén haalbare actie werkt beter dan een lijst. En veilig: stookt iemand minder dan gezond is, dan gaat het advies nooit over verwarmen. Te weinig stoken levert geen punten op.',
+      next: 'Volgende: hoe de besparing wordt gemeten.',
+    }),
+    en: Object.freeze({
+      where: 'The “Today’s tip” card. One piece of advice a day, chosen from this household’s own use, with one line beneath it saying why.',
+      why: 'One feasible action works better than a list. And safely: if someone heats less than is healthy, the advice is never about heating. Heating too little does not earn points.',
+      next: 'Next: how the saving is measured.',
+    }),
+  }),
+  Object.freeze({
+    id: 'savings', title: { nl: 'Gemeten, verwacht, en wat niet meetelt', en: 'Measured, expected, and what does not count' }, screen: 'savings',
+    nl: Object.freeze({
+      where: 'Het scherm Besparing. Het eigen verbruik naast wat het weer verwacht, per maand, seizoen of jaar, met de grafiek eronder.',
+      why: 'Drie soorten getallen worden uit elkaar gehouden: gemeten (45 dagen), geschat (het jaar, zo gelabeld) en niet-meetellend (dagen onder de comfortgrens). Dat onderscheid is wat het eerlijk houdt.',
+      next: 'Volgende: wat de gemeente en de woningcorporatie zien.',
+    }),
+    en: Object.freeze({
+      where: 'The Savings screen. Own use against what the weather expects, by month, season or year, with the chart beneath.',
+      why: 'Three kinds of figure are kept apart: measured (45 days), estimated (the year, labelled as such) and non-counting (days below the comfort floor). That distinction is what keeps it honest.',
+      next: 'Next: what the municipality and the housing association see.',
+    }),
+  }),
+  Object.freeze({
+    id: 'partners', title: { nl: 'Alleen opgetelde cijfers voor partners', en: 'Only aggregated figures for partners' }, screen: 'dashboard', notice: true,
+    nl: Object.freeze({
+      where: 'De keuze voor partners. Gemeente en woningcorporatie zien niet de app maar een apart dashboard, met uitsluitend opgetelde, anonieme cijfers.',
+      why: 'Geen enkel huishouden is herkenbaar; er geldt een minimale groepsgrootte. Vertrouwen is hier een voorwaarde, geen functie.',
+      next: 'Einde van de route. Terug naar het demo-menu, of open het dashboard.',
+    }),
+    en: Object.freeze({
+      where: 'The choice for partners. Municipality and housing association see not the app but a separate dashboard, with aggregated, anonymous figures only.',
+      why: 'No household is identifiable; a minimum group size applies. Trust is a precondition here, not a feature.',
+      next: 'End of the route. Back to the demonstration menu, or open the dashboard.',
+    }),
+  }),
+]);
 
-/** Demo device only. Tenants are the product's only real user. */
+const TOTAL_JOURNEY_STEPS = JOURNEY_STEPS.length;
+
+function journeyStep(index) {
+  return JOURNEY_STEPS[Math.min(TOTAL_JOURNEY_STEPS - 1, Math.max(0, index))];
+}
+
+/**
+ * One panel beside the phone, holding the whole moment: where you are, the
+ * title, what you see, why it matters, what comes next, and the controls.
+ * One calm card rather than boxes on three sides - this is read by people who
+ * decide, and it should look like a presentation, not a dashboard.
+ */
+function renderJourneyPanel(step, index, lang = 'nl') {
+  const copy = step[lang] || step.nl;
+  const last = index === TOTAL_JOURNEY_STEPS - 1;
+  const segments = Array.from({ length: TOTAL_JOURNEY_STEPS }, (_, i) =>
+    '<span class="journey-seg' + (i <= index ? ' on' : '') + '"></span>').join('');
+
+  return '<p class="journey-eyebrow">' + say('Klantreis van een bewoner', 'A resident’s customer journey', lang)
+    + ' &middot; ' + say('Stap', 'Step', lang) + ' ' + (index + 1) + ' ' + say('van', 'of', lang) + ' ' + TOTAL_JOURNEY_STEPS + '</p>'
+    + '<div class="journey-progress" aria-hidden="true">' + segments + '</div>'
+    + '<h2 class="journey-title">' + (step.title[lang] || step.title.nl) + '</h2>'
+    + '<h3 class="journey-heading">' + say('Wat je ziet', 'What you see', lang) + '</h3>'
+    + '<p class="journey-text">' + copy.where + '</p>'
+    + '<h3 class="journey-heading">' + say('Waarom dit telt', 'Why this matters', lang) + '</h3>'
+    + '<p class="journey-text">' + copy.why + '</p>'
+    + (step.notice ? '<p class="demo-only demo-notice">' + t('demo.notice', lang) + '</p>' : '')
+    + '<p class="journey-next">' + copy.next + '</p>'
+    + '<div class="journey-controls">'
+    + '<button class="btn ghost journey-menu" data-journey="menu">' + say('Demo-menu', 'Demo menu', lang) + '</button>'
+    + '<button class="btn ghost" data-journey="back"' + (index === 0 ? ' disabled' : '') + '>' + say('Vorige', 'Previous', lang) + '</button>'
+    + '<button class="btn" data-journey="' + (last ? 'menu' : 'next') + '">'
+    + (last ? say('Klaar', 'Done', lang) : say('Volgende', 'Next', lang)) + '</button>'
+    + '</div>';
+}
+
+// ---- js/screens/access.js ----
+/**
+ * The institutional side of the demonstration: the choice between municipality
+ * and housing association, and the screen that links out to their dashboard.
+ *
+ * This module used to hold a mock registration screen, a mock login and a
+ * three-way "who is viewing?" selector in front of the app. The feedback note
+ * of 3 September 2026 (§2, §4 P1) asked for the account screen to go and the
+ * choice of perspective to move to the very beginning. That choice is now the
+ * demonstration menu (js/screens/menu.js); what remains here is the route the
+ * menu's "impact dashboard" entry leads to.
+ *
+ * No email, no password, nothing typed: nothing here can leak, because
+ * nothing here is collected.
+ */
+
+
+/** The institutional dashboard, which already exists and runs separately. */
+const DASHBOARD_URL = 'https://antoine2706.github.io/evs-dashboard/';
+
+/**
+ * The two institutional perspectives. Both see the same dashboard; the note
+ * still wants the choice shown, because the two organisations have different
+ * questions of it.
+ */
 const ROLES = Object.freeze([
   Object.freeze({
-    id: 'tenant', glyph: '\u{1F3E0}',
-    nl: { title: 'Huurder', body: 'De app zoals een bewoner van Heerlen-Noord hem ziet.' },
-    en: { title: 'Tenant', body: 'The app as a resident of Heerlen-Noord sees it.' },
-  }),
-  Object.freeze({
-    id: 'stakeholder', glyph: '\u{1F3E2}',
-    nl: { title: 'Woningcorporatie', body: 'Geaggregeerde cijfers, geen enkel huishouden herkenbaar.' },
-    en: { title: 'Housing corporation', body: 'Aggregated figures, no household identifiable.' },
-  }),
-  Object.freeze({
-    id: 'municipality', glyph: '\u{1F3DB}',
+    id: 'municipality', dashboardRole: 'gemeente', glyph: '\u{1F3DB}',
     nl: { title: 'Gemeente', body: 'Beleidsdashboard op postcodeniveau, met een minimale groepsgrootte.' },
     en: { title: 'Municipality', body: 'Policy dashboard at postcode level, with a minimum group size.' },
+  }),
+  Object.freeze({
+    id: 'stakeholder', dashboardRole: 'corp', glyph: '\u{1F3E2}',
+    nl: { title: 'Woningcorporatie', body: 'Geaggregeerde cijfers, geen enkel huishouden herkenbaar.' },
+    en: { title: 'Housing association', body: 'Aggregated figures, no household identifiable.' },
   }),
 ]);
 
@@ -2639,64 +2964,37 @@ function roleById(id) {
 }
 
 /**
- * Email and password.
- *
- * `mode` is 'register' or 'login'. The reassurance line is not decoration:
- * this demonstrator is shown to an audience that is being asked to trust the
- * product with meter data, and a login form that quietly looked real would
- * undercut exactly the argument act 3 makes.
+ * The link out carries the role that was just chosen, so the dashboard opens
+ * straight in that view instead of asking a second time. `dashboardRole` is
+ * the id the dashboard's own selectRole() accepts ('gemeente' or 'corp').
  */
-function renderCredentials(mode, lang = 'nl') {
-  const isRegister = mode === 'register';
-  const title = isRegister
-    ? say('Maak je account', 'Create your account', lang)
-    : say('Welkom terug', 'Welcome back', lang);
-
-  return '<section class="access" data-access="' + mode + '">'
-    + '<div class="watt" aria-hidden="true">' + batterySvg('happy') + '</div>'
-    + '<h2>' + title + '</h2>'
-    + '<p class="body">' + say(
-      'Je gegevens blijven van jou. ' + BRAND.assistant.name + ' bewaart alleen wat je hiervoor hebt aangevinkt.',
-      'Your data stays yours. ' + BRAND.assistant.name + ' keeps only what you ticked before this.', lang)
-    + '</p>'
-    + '<label class="field stacked"><span>' + say('E-mailadres', 'Email address', lang) + '</span>'
-    + '<input type="email" data-credential="email" autocomplete="off" placeholder="naam@voorbeeld.nl"></label>'
-    + '<label class="field stacked"><span>' + say('Wachtwoord', 'Password', lang) + '</span>'
-    + '<input type="password" data-credential="password" autocomplete="off"></label>'
-    + '<p class="reassure demo-only">' + say(
-      'Nagebootst scherm. Er wordt niets verstuurd en niets opgeslagen &mdash; ook je wachtwoord niet.',
-      'Simulated screen. Nothing is sent and nothing is stored &mdash; not your password either.', lang)
-    + '</p>'
-    // No "skip" beside it: it reached exactly the same screen as the button
-    // next to it, so it looked like a choice while being none.
-    + '<div class="actions">'
-    + '<button class="btn" data-access-action="submit">'
-    + (isRegister ? say('Account maken', 'Create account', lang) : say('Inloggen', 'Log in', lang))
-    + '</button></div></section>';
+function dashboardLink(role) {
+  return DASHBOARD_URL + '?role=' + encodeURIComponent(role.dashboardRole);
 }
 
-/** The three roles, with the demo-only caveat impossible to miss. */
-function renderRoles(lang = 'nl') {
+/**
+ * The choice between municipality and housing association, with the
+ * demonstration notice already on it - the note wants the warning carried by
+ * this route, not discovered one click later.
+ */
+function renderInstitutionalChoice(lang = 'nl') {
   const items = ROLES.map((role) =>
     '<button class="role" data-role="' + role.id + '">'
     + '<span class="role-glyph" aria-hidden="true">' + role.glyph + '</span>'
     + '<span class="role-text"><strong>' + role[lang].title + '</strong>'
     + '<span>' + role[lang].body + '</span></span></button>').join('');
 
-  return '<section class="access" data-access="roles">'
-    + '<h2>' + say('Wie kijkt er mee?', 'Who is looking?', lang) + '</h2>'
-    + '<p class="demo-only">' + say(
-      'Dit scherm hoort niet bij het product. Het staat er alleen zodat we in deze demo alle drie de gezichtspunten kunnen laten zien. Een echte huurder krijgt deze keuze nooit.',
-      'This screen is not part of the product. It is here only so this walkthrough can show all three points of view. A real tenant never sees this choice.', lang)
-    + '</p>' + items + '</section>';
+  return '<section class="access" data-access="institutional-choice">'
+    + '<h2>' + say('Voor wie is het dashboard?', 'Who is the dashboard for?', lang) + '</h2>'
+    + '<p class="demo-only demo-notice">' + t('demo.notice', lang) + '</p>'
+    + items + '</section>';
 }
 
-/** The institutional dashboard, which already exists and runs separately. */
-const DASHBOARD_URL = 'https://antoine2706.github.io/evs-dashboard/';
-
 /**
- * The institutional roles have no phone app - their view is the dashboard.
- * Linking to the one that exists beats inventing a screen that does not.
+ * The screen that links out. The reviewer found the dashboard's 847
+ * households and EUR 14,200 read as pilot results actually achieved; his
+ * sentence is the last thing on this screen before the link. The banner on
+ * the dashboard itself lives in that other repository (see README, handover).
  */
 function renderInstitutionalRole(role, lang = 'nl') {
   const name = role[lang].title.toLowerCase();
@@ -2706,95 +3004,12 @@ function renderInstitutionalRole(role, lang = 'nl') {
       'Deze rol gebruikt de app niet. Wat een ' + name + ' ziet is het dashboard, en dat draait apart.',
       'This role does not use the app. What a ' + name + ' sees is the dashboard, which runs separately.', lang)
     + '</p>'
-    + '<p class="demo-only">' + say(
-      'De cijfers in dat dashboard zijn nagebootst en staan daar ook zo gelabeld.',
-      'The figures in that dashboard are synthetic and are labelled as such there.', lang)
-    + '</p>'
+    + '<p class="demo-only demo-notice">' + t('demo.notice', lang) + '</p>'
     + '<div class="actions">'
     + '<button class="btn ghost" data-access-action="roles">' + say('Andere rol', 'Another role', lang) + '</button>'
-    + '<a class="btn" href="' + DASHBOARD_URL + '" target="_blank" rel="noopener noreferrer">'
+    + '<a class="btn" href="' + dashboardLink(role) + '" target="_blank" rel="noopener noreferrer">'
     + say('Dashboard openen', 'Open dashboard', lang) + '</a>'
     + '</div></section>';
-}
-
-/**
- * Runs registration or login, then the role selector, then hands over.
- *
- * @param {HTMLElement} container
- * @param {object} opts { store, onDone() }
- */
-function mountAccess(container, opts) {
-  const { store, onDone } = opts;
-  const lang = () => store.get().language;
-
-  // Whatever is on screen, so the header's NL/EN switch can re-render it. None
-  // of these screens has a drawer, so this is the only way to change language
-  // before registration is finished.
-  let redraw = () => {};
-
-  function showRoles() {
-    redraw = () => { container.innerHTML = renderRoles(lang()); };
-    redraw();
-  }
-
-  function showCredentials() {
-    const mode = store.get().registered ? 'login' : 'register';
-    redraw = () => { container.innerHTML = renderCredentials(mode, lang()); };
-    redraw();
-  }
-
-  function showConsentJourney() {
-    // The consent journey is the seven-step flow Watt already owns. The brief
-    // puts it inside registration rather than in front of the whole app.
-    // mountOnboarding is called once - re-running it would stack listeners, so
-    // the language switch goes through its own draw().
-    const view = mountOnboarding(container, store.get(), lang, (next) => {
-      // Merge only what the journey owns. It captured the state at mount time,
-      // so writing the whole object back would undo anything changed since -
-      // including the language picked on its own first step.
-      store.set({
-        ...store.get(),
-        consent: next.consent,
-        home: next.home,
-        onboarded: true,
-      });
-      showCredentials();
-    });
-    redraw = view.draw;
-  }
-
-  container.addEventListener('click', (event) => {
-    // The first onboarding step asks which language before anything is
-    // explained. mountOnboarding does not own the store, so the choice is
-    // applied here and redrawn through it.
-    const chosen = event.target.closest('[data-lang]')?.dataset.lang;
-    if (chosen) {
-      if (chosen !== lang()) store.set({ ...store.get(), language: chosen });
-      return;
-    }
-
-    const action = event.target.closest('[data-access-action]')?.dataset.accessAction;
-
-    if (action === 'submit') {
-      // The password is deliberately never read back out of the field.
-      store.set({ ...store.get(), registered: true });
-      showRoles();
-      return;
-    }
-    if (action === 'roles') { showRoles(); return; }
-
-    const role = event.target.closest('[data-role]')?.dataset.role;
-    if (!role) return;
-    store.set({ ...store.get(), role });
-    if (role === 'tenant') { onDone(); return; }
-    redraw = () => { container.innerHTML = renderInstitutionalRole(roleById(role), lang()); };
-    redraw();
-  });
-
-  if (store.get().registered) showCredentials();
-  else showConsentJourney();
-
-  return { redraw: () => redraw() };
 }
 
 // ---- js/screens/more.js ----
@@ -3340,7 +3555,7 @@ function renderProfile(app, state, lang) {
     // The same five answers the tenant gave during registration, worded the
     // same way, so nothing looks like a different question on the way back.
     + card(say('Je woning', 'Your home', lang),
-        statRow('Postcode', state.home.postcode)
+        statRow(say('Postcodegebied', 'Postcode area', lang), state.home.postcode)
         + statRow(say('Kamers', 'Rooms', lang), String(state.home.rooms))
         + statRow(say('Verdieping', 'Floor', lang), homeLabel(FLOORS, state.home.floor, lang))
         + statRow(say('Bouwjaar', 'Built', lang), homeLabel(BUILD_PERIODS, state.home.buildPeriod, lang))
@@ -3348,8 +3563,12 @@ function renderProfile(app, state, lang) {
         + statRow(say('Energielabel', 'Energy label', lang), HOUSEHOLD.energyLabel))
     + card(say('Wat je deelt', 'What you share', lang),
         '<div class="consent">' + consent + '</div><p class="reassure">'
-        + say('Je kunt elk onderdeel uitzetten wanneer je wilt. De app blijft werken.',
-              'You can switch off any item whenever you like. The app keeps working.', lang) + '</p>')
+        + say('Je kunt elk onderdeel uitzetten wanneer je wilt. Zonder meterstanden blijven de tips werken, maar je verbruik en je besparing kunnen we dan niet berekenen.',
+              'You can switch off any item whenever you like. Without meter data the tips keep working, but we cannot calculate your consumption or your savings.', lang) + '</p>'
+        // The sign-up no longer sits in front of the demonstration; this is
+        // where a visitor sees how a resident is asked for consent.
+        + '<div class="actions"><button class="btn ghost" data-replay-onboarding>'
+        + say('Bekijk de aanmelding', 'View the sign-up', lang) + '</button></div>')
     + card(say('De naam van je boom', 'Your tree’s name', lang),
         '<p class="note">' + say(
           'Je boom heet nu ' + state.treeName + '. Kies een andere naam of typ er zelf een.',
@@ -3663,6 +3882,9 @@ function mountTour(stage, lang, onDone, controls = {}) {
 
 
 
+
+
+
 function boot(profileId) {
   // The model learns from the baseline window and is measured only on the
   // report window after it. Fitting and measuring the same days would force
@@ -3763,25 +3985,44 @@ function languageSwitch(lang) {
     + '</div>';
 }
 
-/** Back to the very first screen. Clears the demo, keeps the notes. */
-function restartButton(lang) {
-  return '<button class="restart-button" data-restart aria-label="'
-    + say('Demo opnieuw beginnen', 'Restart the demo', lang) + '">'
-    + '<span aria-hidden="true">&#8635;</span>'
-    + '<span class="restart-label">' + say('Opnieuw', 'Restart', lang) + '</span></button>';
+/**
+ * Back to the demonstration menu, top left, on every screen but the menu.
+ *
+ * The feedback note (§2) found that "Restart" suggested the whole demo would
+ * be erased, when what a lost visitor wants is the overview. This returns to
+ * the menu and erases nothing; a genuine reset lives on the menu itself.
+ */
+function menuButton(lang) {
+  return '<button class="back-menu" data-menu-home aria-label="'
+    + say('Terug naar het demo-menu', 'Back to the demonstration menu', lang) + '">'
+    + '<span aria-hidden="true">&lsaquo;</span>'
+    + '<span class="back-menu-label">' + say('Demo-menu', 'Demo menu', lang) + '</span></button>';
+}
+
+/**
+ * Watt, top left next to the menu button, for anyone who wants the walk
+ * again. The click is handled with the Profile replay: same handler, same
+ * rule that the tour starts on the home screen.
+ */
+function wattButton(lang) {
+  return '<button class="watt-button" data-replay-tour aria-label="'
+    + say('Rondleiding van Watt opnieuw', 'Watt\u2019s walk-through again', lang) + '" title="'
+    + say('Rondleiding opnieuw', 'Walk-through again', lang) + '">'
+    + batterySvg('happy') + '</button>';
 }
 
 function header(title, lang) {
-  return restartButton(lang)
+  return menuButton(lang)
+    + wattButton(lang)
     + '<span class="header-title">' + title + '</span>'
     + languageSwitch(lang)
     + '<button class="info-button" data-help aria-label="'
     + say('Uitleg over dit scherm', 'About this screen', lang) + '">i</button>';
 }
 
-/** The header before the app proper takes over: no drawer to open yet. */
-function accessHeader(lang) {
-  return restartButton(lang)
+/** The header for the menu and the dashboard route. */
+function accessHeader(lang, withBack) {
+  return (withBack ? menuButton(lang) : '')
     + '<span class="header-title brand">' + BRAND.name + '</span>' + languageSwitch(lang);
 }
 
@@ -3920,82 +4161,208 @@ function start(getApp, store) {
 }
 
 /**
- * Back to the very first screen.
+ * Back to the very first screen, with nothing kept.
  *
- * Someone unfamiliar with apps can walk into the demo and have no idea how to
- * get out. Clearing the saved state and reloading is the one action that
- * always works. Notes live under their own key and survive it.
+ * Only the menu offers this, and it says what it does. Everywhere else the
+ * top-left button returns to the menu and erases nothing. Notes live under
+ * their own key and survive even this.
  */
 function restartDemo() {
   try { window.localStorage.removeItem('woneco.state.v1'); } catch { /* ignore */ }
   window.location.reload();
 }
 
+/**
+ * The resident the "resident app" entry shows: someone who has completed
+ * sign-up and said yes. Without this the app would show analysis for a
+ * resident whose consent screen says "no" - the very contradiction the
+ * feedback note's §3.2 is about. Applied once; a visitor who then withdraws
+ * consent in Profile keeps that choice.
+ */
+function demoPersona(state) {
+  if (state.onboarded) return state;
+  return {
+    ...state,
+    onboarded: true,
+    consent: Object.fromEntries(CONSENT_ITEMS.map((item) => [item.key, true])),
+  };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const screen = document.getElementById('screen');
   try {
     let state = load(window.localStorage);
-    // Read through a getter downstream, so the household the demo runs on can
-    // be swapped without re-registering a single listener.
     const app = boot(state.profile);
     let appView = null;
-    let accessView = null;
-    // Assigned once the notes panel exists; the store may fire before then.
     let drawNotesRef = null;
     const headerBar = document.getElementById('header');
+    const tabs = document.getElementById('tabs');
+    const nav = document.getElementById('nav');
+    const stage = document.getElementById('stage');
+
+    // Which surface owns the phone: 'menu', 'app' or 'dashboard'. The note's
+    // three entry points, plus the menu they all return to.
+    let view = 'menu';
+    let picked = null;
+    let journeyIndex = 0;
+    let redrawView = () => {};
+    const journeyPanel = document.getElementById('journey');
 
     const store = {
       get: () => state,
       set: (next) => {
         state = next;
         save(window.localStorage, state);
-        // Before registration finishes there is no appView, and the access
-        // screens own the phone. Either way something must redraw, or the
-        // language switch would change nothing on screen.
-        if (appView) appView.draw();
-        else { headerBar.innerHTML = accessHeader(state.language); accessView?.redraw(); }
+        redrawView();
         drawNotesRef?.();
       },
     };
 
-    // On the header itself, so it survives every redraw of its contents and
-    // works on the access screens, which have no drawer.
+    function clearOverlays() {
+      document.querySelector('.tour-layer')?.remove();
+      delete stage.dataset.tourActive;
+      delete stage.dataset.journey;
+      journeyPanel.innerHTML = '';
+      nav.innerHTML = '';
+    }
+
+    /** True while the phone is showing the partners' choice, on either route. */
+    function onDashboardScreen() {
+      return view === 'dashboard' || (view === 'journey' && journeyStep(journeyIndex).screen === 'dashboard');
+    }
+
+    function drawDashboardScreen() {
+      headerBar.innerHTML = accessHeader(state.language, true);
+      screen.innerHTML = picked
+        ? renderInstitutionalRole(roleById(picked), state.language)
+        : renderInstitutionalChoice(state.language);
+      tabs.innerHTML = '';
+      screen.scrollTop = 0;
+    }
+
+    function showMenu() {
+      view = 'menu';
+      clearOverlays();
+      redrawView = () => {
+        headerBar.innerHTML = accessHeader(state.language, false);
+        screen.innerHTML = renderMenu(state.language);
+        tabs.innerHTML = '';
+        screen.scrollTop = 0;
+      };
+      redrawView();
+    }
+
+    // "Straight to the home screen with free navigation" (note §5), and
+    // Watt walks in behind you: a new resident meets him first, so whoever
+    // opens the app as a resident meets him too. Skippable in one tap, and the
+    // route skips him altogether - it only says he exists.
+    function enterApp() {
+      state = demoPersona(state);
+      save(window.localStorage, state);
+      view = 'app';
+      if (!appView) appView = start(() => app, store);
+      redrawView = () => appView.draw();
+      appView.go('home');
+      mountTour(stage, state.language,
+        () => store.set({ ...store.get(), tourDone: true }), { onScreen: appView.go });
+    }
+
+    // "Straight to the choice between municipality and housing association,
+    // with a permanent demonstration warning" (note §5).
+    function enterDashboard() {
+      view = 'dashboard';
+      picked = null;
+      clearOverlays();
+      redrawView = drawDashboardScreen;
+      redrawView();
+    }
+
+    // The executive route (note §5): five moments, each opening the screen it
+    // is about, explained in the panels beside the phone rather than over it.
+    function enterJourney() {
+      state = demoPersona(state);
+      save(window.localStorage, state);
+      clearOverlays();
+      view = 'journey';
+      journeyIndex = 0;
+      picked = null;
+      if (!appView) appView = start(() => app, store);
+      stage.dataset.journey = 'on';
+      redrawView = () => {
+        const step = journeyStep(journeyIndex);
+        journeyPanel.innerHTML = renderJourneyPanel(step, journeyIndex, state.language);
+        if (step.screen === 'dashboard') drawDashboardScreen();
+        else appView.go(step.screen);
+      };
+      redrawView();
+    }
+
+    journeyPanel.addEventListener('click', (event) => {
+      const action = event.target.closest('[data-journey]')?.dataset.journey;
+      if (action === 'menu') { showMenu(); return; }
+      if (action === 'next') journeyIndex = Math.min(TOTAL_JOURNEY_STEPS - 1, journeyIndex + 1);
+      if (action === 'back') journeyIndex = Math.max(0, journeyIndex - 1);
+      if (action === 'next' || action === 'back') { picked = null; redrawView(); }
+    });
+
+    // On the header element itself, so it survives every redraw of its
+    // contents and works on all three surfaces.
     headerBar.addEventListener('click', (event) => {
-      if (event.target.closest('[data-restart]')) { restartDemo(); return; }
+      if (event.target.closest('[data-menu-home]')) { showMenu(); return; }
       const lang = event.target.closest('[data-lang]')?.dataset.lang;
       if (lang && lang !== state.language) store.set({ ...state, language: lang });
     });
 
+    screen.addEventListener('click', (event) => {
+      if (event.target.closest('[data-restart]')) { restartDemo(); return; }
+
+      const entry = event.target.closest('[data-menu]')?.dataset.menu;
+      if (entry === 'app') { enterApp(); return; }
+      if (entry === 'dashboard') { enterDashboard(); return; }
+      if (entry === 'journey') { enterJourney(); return; }
+
+      if (onDashboardScreen()) {
+        const role = event.target.closest('[data-role]')?.dataset.role;
+        if (role) { picked = role; redrawView(); return; }
+        if (event.target.closest('[data-access-action="roles"]')) { picked = null; redrawView(); }
+        return;
+      }
+
+      if (view === 'app' && event.target.closest('[data-replay-onboarding]')) {
+        const journey = mountConsentJourney(screen, store, () => {
+          redrawView = () => appView.draw();
+          appView.go('profile');
+        });
+        redrawView = () => journey.draw();
+      }
+    });
+
     // The notes panel beside the phone, saved under its own key so restarting
     // the demo never throws away what someone typed.
+    // Collapsed by default behind a small button (note §5): open, the panel
+    // drew almost as much attention as the app. Its state is remembered.
     const side = document.getElementById('side');
-    const drawNotes = () => { side.innerHTML = renderNotes(loadNotes(window.localStorage), state.language); };
+    const NOTES_OPEN_KEY = 'evs.notes.open';
+    const notesOpen = () => { try { return window.localStorage.getItem(NOTES_OPEN_KEY) === '1'; } catch { return false; } };
+    const drawNotes = () => {
+      const open = notesOpen();
+      side.classList.toggle('open', open);
+      side.innerHTML = '<button class="notes-toggle" data-notes-toggle aria-expanded="' + open + '">'
+        + (open ? '&#9662; ' : '&#9656; ') + say('Notities', 'Notes', state.language) + '</button>'
+        + (open ? renderNotes(loadNotes(window.localStorage), state.language) : '');
+    };
+    side.addEventListener('click', (event) => {
+      if (!event.target.closest('[data-notes-toggle]')) return;
+      try { window.localStorage.setItem(NOTES_OPEN_KEY, notesOpen() ? '0' : '1'); } catch { /* ignore */ }
+      drawNotes();
+    });
     side.addEventListener('input', (event) => {
       if ('notes' in (event.target.dataset || {})) saveNotes(window.localStorage, event.target.value);
     });
     drawNotesRef = drawNotes;
     drawNotes();
 
-    // The brief's screen order: registration - which is where the consent
-    // journey lives - or login for a returning tenant, then the demo-only role
-    // selector, then the app. The access screens have no tab of their own, so
-    // the header carries the product name until the app proper takes over.
-    headerBar.innerHTML = accessHeader(state.language);
-
-    accessView = mountAccess(screen, {
-      store,
-      onDone: () => {
-        accessView = null;
-        appView = start(() => app, store);
-        // Watt explains the app in place, over the working screen, rather than
-        // in a wall of introduction pages in front of it. He runs every time
-        // rather than only on first open: this is a demonstrator, and whoever
-        // is being shown it has not seen the introduction before.
-        mountTour(document.getElementById('stage'), store.get().language,
-          () => store.set({ ...store.get(), tourDone: true }),
-          { onScreen: appView.go });
-      },
-    });
+    showMenu();
   } catch (error) {
     screen.textContent = 'Opstartfout: ' + error.message;
     throw error;
