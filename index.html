@@ -382,6 +382,33 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
              background: var(--surface); color: var(--ink); }
 .notes-box:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
+/* --- Event detection tab --- */
+.evt-controls { display: grid; gap: 10px; }
+.evt-control { display: flex; flex-direction: column; gap: 4px; font-size: 16px; }
+.evt-control select, .evt-control input { font: inherit; padding: 8px; border: 2px solid var(--green-600);
+  border-radius: 8px; background: var(--surface); color: var(--ink); }
+.evt-actions { display: flex; gap: 8px; margin-top: 10px; }
+.evt-actions .btn { min-height: 42px; font-size: 16px; }
+.evt-status { padding: 10px 12px; border-radius: 8px; background: var(--green-100); font-size: 15px; }
+.evt-status.warn { background: #fdf3d7; border-left: 4px solid var(--accent); }
+.evt-chart { overflow-x: auto; }
+.evt-chart svg { display: block; width: 100%; min-width: 300px; height: 180px; }
+.evt-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; color: #4a5a50; }
+.evt-key { display: inline-flex; align-items: center; gap: 4px; }
+.evt-swatch { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.evt-table-wrap { overflow-x: auto; }
+.evt-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.evt-table th, .evt-table td { padding: 8px 5px; text-align: left; border-bottom: 1px solid #d3ddd6; }
+.evt-table th button { border: none; background: none; padding: 0; font: inherit; font-weight: 700; cursor: pointer; color: var(--green-900); }
+.evt-table tr { cursor: pointer; }
+.evt-table tr.evt-selected { background: #fdf3d7; outline: 2px solid var(--accent); outline-offset: -2px; }
+.evt-muted { color: #4a5a50; font-size: 14px; }
+.evt-metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; overflow-x: auto; }
+.evt-metric { min-width: 92px; padding: 8px; background: var(--surface); border-radius: 8px; }
+.evt-metric strong, .evt-metric span { display: block; }
+.evt-metric strong { color: var(--green-900); font-size: 15px; }
+.evt-metric span { font-size: 13px; }
+
 /* Watt beside the phone rather than over it, once there is room. */
 .tour-bubble[data-side="true"] { right: auto; width: 340px; }
 .tour-bubble[data-side="false"] { right: auto; width: 366px; max-width: calc(100vw - 24px); }
@@ -3669,6 +3696,108 @@ function renderProfile(app, state, lang) {
         + '<p class="note">' + floorNote + '</p>');
 }
 
+// ---- event detection tab ----
+// The UI deliberately depends only on the JSON API contract. Dataset loading,
+// resampling and detector implementation can arrive later without changing it.
+const EVT_API_BASE = window.EVS_EVENT_API_BASE_URL || 'http://127.0.0.1:8000';
+const EVT_COLORS = Object.freeze({
+  step_change: '#2E5D3A',
+  high_power_appliance: '#F2B705',
+  base_load_change: '#7A5433',
+  gas_event: '#B3261E',
+});
+
+function renderEventDetection() {
+  return '<section id="evt-detection" data-view="event-detection">'
+    + '<h2>Event detection</h2>'
+    + '<p class="note">NILM detects changes in aggregate meter data. The result is empty until the data service is connected.</p>'
+    + '<section class="card"><h3>Controls</h3><div class="evt-controls">'
+    + '<label class="evt-control">Dataset<select id="evt-dataset"><option value="gridflex_heeten">GridFlex Heeten</option><option value="zonnedael">Zonnedael</option></select></label>'
+    + '<label class="evt-control">Household<input id="evt-household" value="pending" placeholder="Household id"></label>'
+    + '<label class="evt-control">From<input id="evt-from" type="datetime-local"></label>'
+    + '<label class="evt-control">To<input id="evt-to" type="datetime-local"></label>'
+    + '<label class="evt-control">Module<select id="evt-module"><option value="nilm">NILM</option><option value="anomaly">Anomaly (placeholder)</option></select></label>'
+    + '</div><div class="evt-actions"><button class="btn" id="evt-run">Run detection</button><button class="btn ghost" id="evt-evaluate">Evaluate</button></div></section>'
+    + '<p id="evt-status" class="evt-status">Ready. Backend: ' + escapeHtml(EVT_API_BASE) + '</p>'
+    + '<section class="card"><h3>Load curve</h3><div id="evt-chart" class="evt-chart"><p class="evt-muted">No series loaded.</p></div><div id="evt-legend" class="evt-legend"></div></section>'
+    + '<section class="card"><h3>Detected events</h3><div class="evt-table-wrap"><table class="evt-table"><thead><tr>'
+    + '<th><button data-evt-sort="type">Type</button></th><th><button data-evt-sort="start">Time</button></th><th><button data-evt-sort="magnitude">Size</button></th><th><button data-evt-sort="confidence">Confidence</button></th></tr></thead><tbody id="evt-events"><tr><td colspan="4" class="evt-muted">No events loaded.</td></tr></tbody></table></div></section>'
+    + '<section class="card"><h3>Evaluation</h3><p id="evt-evaluation-source" class="evt-muted">No evaluation run yet.</p><div id="evt-metrics" class="evt-metric-grid"></div></section>'
+    + '</section>';
+}
+
+function evtDate(value) {
+  return value ? new Date(value).toLocaleString() : '-';
+}
+
+function evtRequest(container) {
+  const value = (id) => container.querySelector('#' + id).value;
+  return {
+    dataset: value('evt-dataset'), household: value('evt-household'),
+    range_start: value('evt-from') || null, range_end: value('evt-to') || null,
+    module: value('evt-module'), method: 'rules',
+  };
+}
+
+function evtDrawChart(chart, legend, points, events, selectedId) {
+  if (!points.length) { chart.innerHTML = '<p class="evt-muted">No series loaded. Connect the data service to see the curve.</p>'; legend.innerHTML = ''; return; }
+  const width = 640; const height = 180; const pad = 18;
+  const values = points.map((p) => p.electricity_w).filter((v) => Number.isFinite(v));
+  const max = Math.max(...values, 1); const min = Math.min(...values, 0);
+  const x = (i) => pad + i * (width - pad * 2) / Math.max(1, points.length - 1);
+  const y = (v) => height - pad - (v - min) * (height - pad * 2) / Math.max(1, max - min);
+  const path = values.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+  const markers = events.map((event) => {
+    const index = points.findIndex((point) => new Date(point.timestamp) >= new Date(event.start));
+    if (index < 0) return '';
+    const color = EVT_COLORS[event.type] || '#4a5a50';
+    const selected = event.id === selectedId;
+    return '<circle cx="' + x(index).toFixed(1) + '" cy="' + y(values[index] || 0).toFixed(1) + '" r="' + (selected ? 7 : 5) + '" fill="' + color + '" stroke="' + (selected ? '#1A1A1A' : '#fff') + '" stroke-width="2"><title>' + escapeHtml(event.type + ' ' + event.magnitude + ' ' + event.confidence) + '</title></circle>';
+  }).join('');
+  chart.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Electricity load curve with detected events"><path d="' + path + '" fill="none" stroke="#1F4128" stroke-width="2" stroke-linejoin="round"/>' + markers + '</svg>';
+  const types = [...new Set(events.map((event) => event.type))];
+  legend.innerHTML = types.map((type) => '<span class="evt-key"><span class="evt-swatch" style="background:' + (EVT_COLORS[type] || '#4a5a50') + '"></span>' + escapeHtml(type) + '</span>').join('');
+}
+
+function mountEventDetection(container) {
+  let points = []; let events = []; let selectedId = null; let sortBy = 'start'; let sortAscending = true;
+  const status = container.querySelector('#evt-status');
+  const chart = container.querySelector('#evt-chart');
+  const legend = container.querySelector('#evt-legend');
+  const table = container.querySelector('#evt-events');
+  const setStatus = (text, warning = false) => { status.textContent = text; status.classList.toggle('warn', warning); };
+  const draw = () => {
+    const sorted = [...events].sort((a, b) => String(a[sortBy]).localeCompare(String(b[sortBy]), undefined, { numeric: true }) * (sortAscending ? 1 : -1));
+    table.innerHTML = sorted.length ? sorted.map((event) => '<tr class="' + (event.id === selectedId ? 'evt-selected' : '') + '" data-evt-id="' + escapeHtml(event.id) + '"><td>' + escapeHtml(event.type) + '</td><td>' + evtDate(event.start) + '</td><td>' + escapeHtml(String(event.magnitude)) + '</td><td>' + Math.round(event.confidence * 100) + '%</td></tr>').join('') : '<tr><td colspan="4" class="evt-muted">No events detected.</td></tr>';
+    evtDrawChart(chart, legend, points, events, selectedId);
+  };
+  const run = async (evaluate) => {
+    setStatus('Loading event detection...');
+    try {
+      const request = evtRequest(container);
+      const endpoint = evaluate ? '/evaluate' : '/detect';
+      const response = await fetch(EVT_API_BASE + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const result = await response.json();
+      if (evaluate) {
+        container.querySelector('#evt-evaluation-source').textContent = result.source + ' Tolerance: +/- ' + result.tolerance_minutes + ' minutes.';
+        container.querySelector('#evt-metrics').innerHTML = result.metrics.map((metric) => '<div class="evt-metric"><strong>' + escapeHtml(metric.event_type) + '</strong><span>P ' + metric.precision + '</span><span>R ' + metric.recall + '</span><span>F1 ' + metric.f1 + '</span></div>').join('');
+      } else {
+        events = result; selectedId = null; draw(); setStatus(events.length ? events.length + ' events loaded.' : 'Backend connected; no events returned for this range.');
+      }
+    } catch (error) { setStatus('Backend offline or unavailable: ' + error.message, true); }
+  };
+  container.querySelector('#evt-run').addEventListener('click', () => run(false));
+  container.querySelector('#evt-evaluate').addEventListener('click', () => run(true));
+  container.addEventListener('click', (event) => {
+    const sort = event.target.closest('[data-evt-sort]')?.dataset.evtSort;
+    if (sort) { if (sortBy === sort) sortAscending = !sortAscending; else { sortBy = sort; sortAscending = true; } draw(); return; }
+    const row = event.target.closest('[data-evt-id]');
+    if (row) { selectedId = row.dataset.evtId; draw(); }
+  });
+  draw();
+}
+
 /**
  * The five buttons along the bottom - Report 6's original design, validated
  * with its 23-respondent survey, and the shape this group asked to return to.
@@ -3677,13 +3806,14 @@ function renderProfile(app, state, lang) {
  * five, so nothing is lost: Goals from the level chip on Home and from
  * Profile, and Settings, Messages and Info from Profile.
  */
-const BOTTOM_TABS = Object.freeze(['home', 'savings', 'challenges', 'tips', 'profile']);
+const BOTTOM_TABS = Object.freeze(['home', 'savings', 'challenges', 'tips', 'event-detection', 'profile']);
 
 const TABS = Object.freeze([
   Object.freeze({ id: 'home', icon: '\u{1F333}', nl: 'Start', en: 'Home', render: renderHome }),
   Object.freeze({ id: 'savings', icon: '\u{1F4B6}', nl: 'Besparing', en: 'Savings', render: renderSavings }),
   Object.freeze({ id: 'challenges', icon: '\u{1F3AF}', nl: 'Uitdagingen', en: 'Challenges', render: renderChallenges }),
   Object.freeze({ id: 'tips', icon: '\u{1F4A1}', nl: 'Tips', en: 'Tips', render: renderTips }),
+  Object.freeze({ id: 'event-detection', icon: '\u{26A1}', nl: 'Events', en: 'Events', render: renderEventDetection }),
   Object.freeze({ id: 'levels', icon: '\u{1F331}', nl: 'Doelen', en: 'Goals', render: renderLevels }),
   Object.freeze({ id: 'profile', icon: '\u{1F464}', nl: 'Profiel', en: 'Profile', render: renderProfile }),
   // The remaining drawer entries the brief lists (section 3).
@@ -4121,6 +4251,7 @@ function start(getApp, store) {
     const title = tab[state.language] || tab.nl;
     bar.innerHTML = header(title, state.language);
     screen.innerHTML = tab.render(app, state, state.language) + footerNote(app, state.language);
+    if (active === 'event-detection') mountEventDetection(screen);
     // Outside #screen, so the bar stays put while the content scrolls.
     tabs.innerHTML = tabBar(active, state.language);
     nav.innerHTML = infoOpen ? infoSheet(active, title, state.language) : '';
