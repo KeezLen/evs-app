@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zonnedael demo data</title>
+<style>
+  :root {
+    --green-900: #1F4128;
+    --green-600: #2E5D3A;
+    --green-100: #E8F0EA;
+    --accent: #F2B705;
+    --ink: #1A1A1A;
+    --surface: #FFFFFF;
+    --muted: #4A5A50;
+    --line: #D3DDD6;
+    --radius: 14px;
+    --tap-min: 48px;
+    --gas: var(--green-600);
+    --elec: #B58500;
+    --temp: #2F6DB5;
+    --event: #C0392B;
+    --problem: #7A867E;
+  }
+  body { margin: 0; background: var(--surface); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .header-title { font-size: 19px; font-weight: 700; color: var(--green-900); }
+  .lang-switch { margin-left: auto; display: flex; gap: 4px; }
+  .lang-switch .chip { min-height: 34px; padding: 4px 10px; font-size: 14px; font-weight: 700; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 24px; color: var(--green-900); margin: 0 0 4px; }
+  h2 { font-size: 19px; color: var(--green-900); margin: 28px 0 8px; }
+  p { margin: 4px 0; }
+  .muted { color: var(--muted); font-size: 15px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .menu-notice { margin: 12px 0; padding: 8px 10px; font-size: 13px; font-weight: 700; color: #8A5512; background: #FDF6E7; border-left: 4px solid #B4711A; border-radius: 6px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin: 16px 0; }
+  .field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; color: var(--green-900); }
+  .field select { font: inherit; font-weight: 400; color: var(--ink); font-size: 17px; min-height: var(--tap-min); padding: 8px; border-radius: 8px; border: 2px solid var(--green-600); background: var(--surface); max-width: 100%; }
+  .chips { display: flex; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; min-height: var(--tap-min); padding: 4px 16px; border-radius: 999px; cursor: pointer; border: 2px solid var(--green-600); background: var(--surface); color: var(--green-900); font: inherit; font-size: 15px; font-weight: 600; box-sizing: border-box; }
+  .chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .chip:has(input:checked), .chip[aria-pressed="true"] { background: var(--green-600); color: #fff; }
+  .chip:has(input:focus-visible), .chip:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .card { background: var(--green-100); border-radius: var(--radius); padding: 14px; margin: 12px 0; }
+  .card.warn { background: #FDF3D7; border-left: 4px solid var(--accent); }
+  .card.warn p { margin: 0; font-size: 15px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 15px; }
+  .summary b { color: var(--green-900); }
+  .chart { position: relative; margin-top: 16px; overflow-x: auto; }
+  svg { width: 100%; min-width: 760px; height: auto; display: block; }
+  svg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .axis text, .label { font-size: 13px; fill: var(--muted); }
+  .axis line, .axis path { stroke: var(--line); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .key { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; margin-right: 5px; border-radius: 2px; }
+  .caption { margin-top: 8px; font-size: 15px; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; box-shadow: 0 2px 6px rgba(0,0,0,.12); display: none; white-space: nowrap; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; color: var(--green-900); }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--green-600); color: var(--green-900); }
+  .tag.synthetic { border-color: #B4711A; color: #8A5512; background: #FDF6E7; }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div id="header">
+  <span class="header-title">Energieverdienspel</span>
+</div>
+<main>
+  <h1 data-t="title"></h1>
+  <p class="muted" data-t="subtitle"></p>
+  <div class="menu-notice" data-t="notice"></div>
+
+  <div class="controls">
+    <label class="field"><span data-t="pick"></span> <select id="pick"></select></label>
+    <div class="chips" role="radiogroup" id="wx-group">
+      <label class="chip"><input type="radio" name="wx" value="temp" checked><span data-t="temp"></span></label>
+      <label class="chip"><input type="radio" name="wx" value="hdd"><span data-t="hdd"></span></label>
+    </div>
+  </div>
+
+  <div class="card summary" id="summary"></div>
+  <div id="notes"></div>
+
+  <p class="muted" id="chart-hint" data-t="hint"></p>
+  <div class="chart" id="chart">
+    <svg id="svg" viewBox="0 0 900 440" role="img" tabindex="0" aria-labelledby="chart-caption" aria-describedby="chart-hint"></svg>
+    <div class="tip" id="tip"></div>
+  </div>
+  <div class="legend">
+    <span><span class="key" style="background:var(--gas)"></span><span data-t="legendGas"></span></span>
+    <span><span class="key" style="background:var(--elec)"></span><span data-t="legendElec"></span></span>
+    <span><span class="key" style="background:var(--temp);height:3px;vertical-align:3px;border-radius:0"></span><span id="wx-legend"></span></span>
+    <span><span class="key" style="background:var(--event)"></span><span data-t="legendEvent"></span></span>
+    <span><span class="key" style="background-image:repeating-linear-gradient(45deg,var(--problem) 0 2px,transparent 2px 5px)"></span><span data-t="legendProblem"></span></span>
+  </div>
+  <p class="caption" id="chart-caption"></p>
+  <div class="sr-only" id="live" aria-live="polite"></div>
+
+  <h2 data-t="eventsTitle"></h2>
+  <div id="events"></div>
+
+  <h2 data-t="problemsTitle"></h2>
+  <p class="muted" data-t="problemsIntro"></p>
+  <div id="problems"></div>
+</main>
+
+<script src="demo_data.js"></script>
+<script>
+if (typeof DATA === "undefined") {
+  document.querySelector("main").innerHTML =
+    '<div class="card warn"><p><b>demo_data.js is niet geladen / did not load.</b> ' +
+    "Zet het in dezelfde map als deze pagina, of open de pagina via http://localhost:8765/demo_data.html. / " +
+    "Put it in the same folder as this page, or open the page at http://localhost:8765/demo_data.html.</p></div>";
+  throw new Error("demo_data.js not loaded");
+}
+const NS = "http://www.w3.org/2000/svg";
+const W = 900, M = { l: 48, r: 48 };
+const GAS = { top: 20, h: 210 }, ELEC = { top: 270, h: 120 };
+const AXIS_Y = 410;
+const MIN_PROFILE_DAYS = 14;
+
+const TEXT = {
+  nl: {
+    title: "Zonnedael demodata",
+    subtitle: "Dagelijks gas- en stroomverbruik (T+1) voor de demoscenario's, met weer van KNMI 260 De Bilt.",
+    notice: "DEMODATA — één echt huishouden uit 2013. Synthetische wijzigingen in high_use en missing zijn gemarkeerd als synthetisch.",
+    pick: "Huishouden / scenario",
+    temp: "Temperatuur",
+    hdd: "Graaddagen",
+    wxGroup: "Weerlijn",
+    hint: "Klik of tik op een dag om de waarden te zien. Met het toetsenbord: ga naar de grafiek en gebruik de pijltjestoetsen.",
+    legendGas: "Gas (m³)",
+    legendElec: "Stroom (kWh)",
+    legendTemp: "Gemiddelde temperatuur (°C)",
+    legendHdd: "Graaddagen (basis 18 °C)",
+    legendEvent: "Gemarkeerde afwijking (gekleurde kolom en ▼)",
+    legendProblem: "Dataprobleem (geen waarde of geen data)",
+    axisGas: "Gas m³",
+    axisElec: "Stroom kWh",
+    axisTemp: "Gem. temp °C",
+    axisHdd: "Graaddagen (basis 18 °C)",
+    eventsTitle: "Gemarkeerde afwijkingen",
+    noEventColumn: "Dit scenario heeft geen kolom met afwijkingen.",
+    noEvents: "Geen gemarkeerde afwijkingen.",
+    problemsTitle: "Dataproblemen",
+    problemsIntro: "Dagen waarop data ontbreekt of onvolledig is. Dit is geen ongewoon verbruik.",
+    noProblems: "Geen dataproblemen.",
+    date: "Datum", gas: "Gas", elec: "Stroom", gasCol: "Gas (m³)", tempCol: "Gem. temp (°C)", hddCol: "Graaddagen",
+    source: "Bron", quality: "Kwaliteit", whatsWrong: "Wat is er mis",
+    synthetic: "synthetisch", real: "echt",
+    flag: { ok: "in orde", partial: "gedeeltelijk", missing: "ontbreekt", none: "geen rij" },
+    noRow: "Geen data ontvangen voor deze dag",
+    noMeter: "Geen meterdata voor deze dag",
+    incomplete: "Onvolledig",
+    gasHours: n => `gas ${n} van 24 uur`,
+    elecIntervals: n => `stroom ${n} van 96 kwartieren`,
+    eventTip: "Gemarkeerde afwijking (synthetisch)",
+    period: "Periode", periodText: (a, b, n) => `${a} tot ${b} (${n} dagen)`,
+    ok: "In orde", partial: "Gedeeltelijk", missing: "Ontbreekt", absent: "Niet ontvangen",
+    woning: "Woningtype", bouwjaar: "Bouwjaar", gezin: "Huishouden", notProvided: "niet opgegeven",
+    shortHistory: n => `Maar ${n} dagen bruikbare geschiedenis. Dat is te weinig voor een betrouwbaar profiel, dus de app trekt nog geen conclusies over deze woning.`,
+    noTyping: "Er is geen informatie over de woning of het huishouden. De kern werkt dan alleen op meterdata en weer.",
+    caption: (n, gMin, gMax, gDate, eMin, eMax, ev, pr) =>
+      `${n} dagen. Gas ${gMin} tot ${gMax} m³ per dag, het hoogst op ${gDate}. Stroom ${eMin} tot ${eMax} kWh per dag. ` +
+      `${ev} gemarkeerde ${ev === 1 ? "afwijking" : "afwijkingen"}. ${pr} ${pr === 1 ? "dataprobleem" : "dataproblemen"}.`,
+    noValues: "Geen meetwaarden in deze periode.",
+  },
+  en: {
+    title: "Zonnedael demo data",
+    subtitle: "Daily gas and electricity (T+1) for the demo scenarios, with weather from KNMI 260 De Bilt.",
+    notice: "DEMO DATA — one real household from 2013. Synthetic changes in high_use and missing are marked as synthetic.",
+    pick: "Household / scenario",
+    temp: "Temperature",
+    hdd: "HDD",
+    wxGroup: "Weather line",
+    hint: "Click or tap a day to see its values. With a keyboard, focus the chart and use the arrow keys.",
+    legendGas: "Gas (m³)",
+    legendElec: "Electricity (kWh)",
+    legendTemp: "Mean temperature (°C)",
+    legendHdd: "Heating degree days (base 18 °C)",
+    legendEvent: "Flagged event (shaded column and ▼)",
+    legendProblem: "Data problem (no value or no data)",
+    axisGas: "Gas m³",
+    axisElec: "Electricity kWh",
+    axisTemp: "Mean temp °C",
+    axisHdd: "HDD (base 18 °C)",
+    eventsTitle: "Flagged events",
+    noEventColumn: "This scenario has no event column.",
+    noEvents: "No flagged events.",
+    problemsTitle: "Data problems",
+    problemsIntro: "Days where data is missing or incomplete. These are not unusual use.",
+    noProblems: "No data problems.",
+    date: "Date", gas: "Gas", elec: "Electricity", gasCol: "Gas (m³)", tempCol: "Mean temp (°C)", hddCol: "HDD",
+    source: "Source", quality: "Quality", whatsWrong: "What is wrong",
+    synthetic: "synthetic", real: "real",
+    flag: { ok: "ok", partial: "partial", missing: "missing", none: "no row" },
+    noRow: "No data received for this day",
+    noMeter: "No meter data for this day",
+    incomplete: "Incomplete",
+    gasHours: n => `gas ${n} of 24 hours`,
+    elecIntervals: n => `electricity ${n} of 96 intervals`,
+    eventTip: "Flagged event (synthetic)",
+    period: "Period", periodText: (a, b, n) => `${a} to ${b} (${n} days)`,
+    ok: "Ok", partial: "Partial", missing: "Missing", absent: "Not received",
+    woning: "House type", bouwjaar: "Build year", gezin: "Household", notProvided: "not provided",
+    shortHistory: n => `Only ${n} days of usable history. That is too little for a reliable profile yet, so the app should not draw conclusions about this home.`,
+    noTyping: "No house or household information is provided. The core still runs on meter data and weather alone.",
+    caption: (n, gMin, gMax, gDate, eMin, eMax, ev, pr) =>
+      `${n} days. Gas ${gMin} to ${gMax} m³ a day, highest on ${gDate}. Electricity ${eMin} to ${eMax} kWh a day. ` +
+      `${ev} flagged ${ev === 1 ? "event" : "events"}. ${pr} data ${pr === 1 ? "problem" : "problems"}.`,
+    noValues: "No meter values in this period.",
+  },
+};
+
+const pick = document.getElementById("pick");
+const svg = document.getElementById("svg");
+const tip = document.getElementById("tip");
+const chart = document.getElementById("chart");
+const live = document.getElementById("live");
+
+const lang = "en";
+let selected = null;
+let view = null;
+
+const T = () => TEXT[lang];
+
+DATA.forEach((s, i) => {
+  const o = document.createElement("option");
+  o.value = i;
+  o.textContent = `${s.household_id} · ${s.scenario}`;
+  pick.appendChild(o);
+});
+
+function el(name, attrs, parent) {
+  const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  (parent || svg).appendChild(e);
+  return e;
+}
+
+function dayRange(first, last) {
+  const out = [];
+  for (let d = new Date(first + "T00:00:00Z"); d <= new Date(last + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 1)) {
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= v);
+}
+
+function fmt(v, d) {
+  if (v == null) return "–";
+  return v.toLocaleString(lang === "nl" ? "nl-NL" : "en-GB", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function num(v) { return v.toLocaleString(lang === "nl" ? "nl-NL" : "en-GB", { maximumFractionDigits: 1 }); }
+
+function problemText(r) {
+  const t = T();
+  if (!r) return t.noRow;
+  if (r.quality_flag === "missing") return t.noMeter;
+  const parts = [];
+  if (r.n_gas_hours < 24) parts.push(t.gasHours(r.n_gas_hours));
+  if (r.n_elec_intervals < 96) parts.push(t.elecIntervals(r.n_elec_intervals));
+  return `${t.incomplete}: ${parts.join(", ")}`;
+}
+
+function applyText() {
+  const t = T();
+  document.documentElement.lang = lang;
+  document.title = t.title;
+  document.querySelectorAll("[data-t]").forEach(e => { e.textContent = t[e.dataset.t]; });
+  document.getElementById("wx-group").setAttribute("aria-label", t.wxGroup);
+  document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === lang));
+}
+
+function render() {
+  const t = T();
+  const s = DATA[pick.value];
+  const wx = document.querySelector("input[name=wx]:checked").value;
+  const wxKey = wx === "hdd" ? "hdd18" : "temp_mean_c";
+  const hasEvents = s.columns.includes("synthetic_event");
+  const byDate = Object.fromEntries(s.rows.map(r => [r.date, r]));
+  const days = dayRange(s.rows[0].date, s.expected_end);
+
+  const n = days.length;
+  const step = (W - M.l - M.r) / n;
+  const bw = Math.max(1, step * 0.72);
+  const x = i => M.l + i * step + (step - bw) / 2;
+
+  const gasMax = niceMax(Math.max(...s.rows.map(r => r.gas_m3 || 0)));
+  const elecMax = niceMax(Math.max(...s.rows.map(r => r.electricity_kwh || 0)));
+  const wxVals = s.rows.map(r => r[wxKey]);
+  const wxMin = wx === "hdd" ? 0 : Math.floor(Math.min(0, ...wxVals) / 5) * 5;
+  const wxMax = Math.ceil(Math.max(...wxVals) / 5) * 5 || 5;
+  const yGas = v => GAS.top + GAS.h - (v / gasMax) * GAS.h;
+  const yElec = v => ELEC.top + ELEC.h - (v / elecMax) * ELEC.h;
+  const yWx = v => GAS.top + GAS.h - ((v - wxMin) / (wxMax - wxMin)) * GAS.h;
+
+  svg.innerHTML = "";
+  const defs = el("defs", {});
+  const pat = el("pattern", { id: "hatch", width: 5, height: 5, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+  el("rect", { width: 2, height: 5, fill: "var(--problem)", opacity: 0.55 }, pat);
+
+  const axis = el("g", { class: "axis" });
+  [[GAS, gasMax, yGas, t.axisGas], [ELEC, elecMax, yElec, t.axisElec]].forEach(([p, max, y, title]) => {
+    for (let k = 0; k <= 4; k++) {
+      const v = max * k / 4;
+      if (p === ELEC && k % 2) continue;
+      el("line", { x1: M.l, x2: W - M.r, y1: y(v), y2: y(v), "stroke-dasharray": k ? "2 3" : "" }, axis);
+      el("text", { x: M.l - 6, y: y(v) + 4, "text-anchor": "end" }, axis).textContent = num(v);
+    }
+    el("text", { x: M.l, y: p.top - 6, class: "label" }, axis).textContent = title;
+  });
+  for (let v = wxMin; v <= wxMax; v += 5) {
+    el("text", { x: W - M.r + 6, y: yWx(v) + 4, fill: "var(--temp)" }, axis).textContent = num(v);
+  }
+  el("text", { x: W - M.r, y: GAS.top - 6, "text-anchor": "end", class: "label" }, axis).textContent = wx === "hdd" ? t.axisHdd : t.axisTemp;
+  if (wx === "temp" && wxMin < 0) {
+    el("line", { x1: M.l, x2: W - M.r, y1: yWx(0), y2: yWx(0), stroke: "var(--temp)", "stroke-opacity": 0.35, "stroke-dasharray": "4 4" }, axis);
+  }
+
+  const labelEvery = n > 40 ? 7 : n > 15 ? 2 : 1;
+  days.forEach((d, i) => {
+    if (d.endsWith("-01") || i % labelEvery === 0 && n <= 40) {
+      el("text", { x: M.l + i * step + step / 2, y: AXIS_Y + 14, "text-anchor": "middle" }, axis).textContent =
+        d.endsWith("-01") || n <= 40 ? d.slice(5).replace("-", "/") : "";
+    }
+    if (d.endsWith("-01")) el("line", { x1: M.l + i * step, x2: M.l + i * step, y1: GAS.top, y2: AXIS_Y, "stroke-dasharray": "1 3" }, axis);
+  });
+
+  const problems = [];
+  const events = [];
+  days.forEach((d, i) => {
+    const r = byDate[d];
+    const gasBad = !r || r.gas_m3 == null;
+    const elecBad = !r || r.electricity_kwh == null;
+    if (!r || r.quality_flag !== "ok") problems.push({ date: d, r });
+    const isEvent = hasEvents && r && r.synthetic_event;
+    if (isEvent) events.push(r);
+
+    if (isEvent) el("rect", { x: M.l + i * step, y: GAS.top, width: step, height: GAS.h, fill: "var(--event)", opacity: 0.14 });
+    if (gasBad) el("rect", { x: M.l + i * step, y: GAS.top, width: step, height: GAS.h, fill: "url(#hatch)" });
+    else el("rect", { x: x(i), y: yGas(r.gas_m3), width: bw, height: GAS.top + GAS.h - yGas(r.gas_m3), fill: isEvent ? "var(--event)" : "var(--gas)" });
+    if (elecBad) el("rect", { x: M.l + i * step, y: ELEC.top, width: step, height: ELEC.h, fill: "url(#hatch)" });
+    else el("rect", { x: x(i), y: yElec(r.electricity_kwh), width: bw, height: ELEC.top + ELEC.h - yElec(r.electricity_kwh), fill: "var(--elec)" });
+    if (isEvent) el("path", { d: `M${x(i) + bw / 2 - 7},${GAS.top + 2} h14 l-7,10 z`, fill: "var(--event)" });
+  });
+
+  let path = "", pen = "M";
+  days.forEach((d, i) => {
+    const r = byDate[d];
+    if (!r || r[wxKey] == null) { pen = "M"; return; }
+    path += `${pen}${M.l + i * step + step / 2},${yWx(r[wxKey])}`;
+    pen = "L";
+  });
+  el("path", { d: path, fill: "none", stroke: "#fff", "stroke-width": 4.5, "stroke-linejoin": "round" });
+  el("path", { d: path, fill: "none", stroke: "var(--temp)", "stroke-width": 2, "stroke-linejoin": "round" });
+
+  const si = days.indexOf(selected);
+  if (si >= 0) {
+    el("rect", { x: M.l + si * step, y: GAS.top - 2, width: step, height: AXIS_Y - GAS.top + 2, fill: "none", stroke: "var(--ink)", "stroke-width": 1.5, rx: 2 });
+  }
+
+  const hover = el("g", {});
+  days.forEach((d, i) => {
+    const hit = el("rect", { x: M.l + i * step, y: GAS.top, width: step, height: AXIS_Y - GAS.top, fill: "transparent" }, hover);
+    hit.addEventListener("mousemove", ev => showTip(d, { x: ev.clientX, y: ev.clientY }));
+    hit.addEventListener("mouseleave", () => selected ? showTip(selected) : hideTip());
+    hit.addEventListener("click", () => select(selected === d ? null : d));
+  });
+
+  view = { s, days, byDate, step, hasEvents };
+  document.getElementById("wx-legend").textContent = wx === "hdd" ? t.legendHdd : t.legendTemp;
+  renderSummary(s, days, problems);
+  renderNotes(s);
+  renderCaption(s, days, events, problems);
+  renderEvents(hasEvents, events);
+  renderProblems(problems, s);
+  if (si >= 0) showTip(selected); else hideTip();
+}
+
+function tipHtml(d) {
+  const t = T();
+  const r = view.byDate[d];
+  let html = `<b>${d}</b><br>`;
+  if (!r) return html + t.noRow;
+  html += `${t.gas}: ${fmt(r.gas_m3, 2)} m³ · ${t.elec}: ${fmt(r.electricity_kwh, 2)} kWh<br>`;
+  html += `Temp: ${fmt(r.temp_mean_c, 1)} °C · ${t.hddCol}: ${fmt(r.hdd18, 1)}<br>`;
+  html += `${t.quality}: ${t.flag[r.quality_flag]}`;
+  if (r.quality_flag !== "ok") html += ` (${problemText(r)})`;
+  if (view.hasEvents && r.synthetic_event) html += `<br><b style="color:var(--event)">${t.eventTip}</b>`;
+  return html;
+}
+
+function showTip(d, cursor) {
+  tip.innerHTML = tipHtml(d);
+  tip.style.display = "block";
+  const box = chart.getBoundingClientRect();
+  let left, top;
+  if (cursor) {
+    left = cursor.x - box.left + 12;
+    if (left + tip.offsetWidth > box.width) left = cursor.x - box.left - tip.offsetWidth - 12;
+    left = Math.max(0, left) + chart.scrollLeft;
+    top = cursor.y - box.top + 12;
+  } else {
+    const scale = svg.getBoundingClientRect().width / W;
+    const col = (M.l + (view.days.indexOf(d) + 0.5) * view.step) * scale;
+    const visLeft = chart.scrollLeft, visRight = chart.scrollLeft + chart.clientWidth;
+    left = col + 12;
+    if (left + tip.offsetWidth > visRight) left = col - tip.offsetWidth - 12;
+    left = Math.max(visLeft, Math.min(left, visRight - tip.offsetWidth));
+    top = 40 * scale;
+  }
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+function hideTip() { tip.style.display = "none"; }
+
+function select(d) {
+  selected = d;
+  render();
+  if (!d) { live.textContent = ""; return; }
+  const scale = svg.getBoundingClientRect().width / W;
+  const col = (M.l + (view.days.indexOf(d) + 0.5) * view.step) * scale;
+  if (col < chart.scrollLeft + 40 || col > chart.scrollLeft + chart.clientWidth - 40) {
+    chart.scrollLeft = col - chart.clientWidth / 2;
+    showTip(d);
+  }
+  live.textContent = tip.innerText.replace(/\n/g, ". ");
+}
+
+svg.addEventListener("keydown", ev => {
+  const days = view.days;
+  const i = days.indexOf(selected);
+  const moves = {
+    ArrowRight: i < 0 ? 0 : Math.min(days.length - 1, i + 1),
+    ArrowLeft: i < 0 ? days.length - 1 : Math.max(0, i - 1),
+    Home: 0,
+    End: days.length - 1,
+  };
+  if (ev.key in moves) { ev.preventDefault(); select(days[moves[ev.key]]); }
+  else if (ev.key === "Escape") { ev.preventDefault(); select(null); }
+});
+
+function renderSummary(s, days, problems) {
+  const t = T();
+  const count = f => s.rows.filter(r => r.quality_flag === f).length;
+  const absent = problems.filter(p => !p.r).length;
+  const r0 = s.rows[0];
+  const info = k => r0[k] == null ? `<span class="muted">${t.notProvided}</span>` : r0[k];
+  document.getElementById("summary").innerHTML = [
+    `<span><b>${t.period}</b> ${t.periodText(days[0], days[days.length - 1], days.length)}</span>`,
+    `<span><b>${t.ok}</b> ${count("ok")}</span>`,
+    `<span><b>${t.partial}</b> ${count("partial")}</span>`,
+    `<span><b>${t.missing}</b> ${count("missing")}</span>`,
+    `<span><b>${t.absent}</b> ${absent}</span>`,
+    `<span><b>${t.woning}</b> ${info("woning_type")}</span>`,
+    `<span><b>${t.bouwjaar}</b> ${info("bouwjaar_band")}</span>`,
+    `<span><b>${t.gezin}</b> ${info("gezinssituatie")}</span>`,
+  ].join("");
+}
+
+function renderNotes(s) {
+  const t = T();
+  const usable = s.rows.filter(r => r.quality_flag === "ok").length;
+  const notes = [];
+  if (usable < MIN_PROFILE_DAYS) notes.push(t.shortHistory(usable));
+  if (["woning_type", "bouwjaar_band", "gezinssituatie"].every(k => s.rows[0][k] == null)) notes.push(t.noTyping);
+  document.getElementById("notes").innerHTML = notes.map(n => `<div class="card warn"><p>${n}</p></div>`).join("");
+}
+
+function renderCaption(s, days, events, problems) {
+  const t = T();
+  const range = key => {
+    const rows = s.rows.filter(r => r[key] != null);
+    if (!rows.length) return null;
+    const vals = rows.map(r => r[key]);
+    const top = rows.reduce((a, b) => (b[key] > a[key] ? b : a));
+    return { min: fmt(Math.min(...vals), 1), max: fmt(Math.max(...vals), 1), date: top.date };
+  };
+  const g = range("gas_m3"), e = range("electricity_kwh");
+  document.getElementById("chart-caption").textContent = g && e
+    ? t.caption(days.length, g.min, g.max, g.date, e.min, e.max, events.length, problems.length)
+    : t.noValues;
+}
+
+function renderEvents(hasEvents, events) {
+  const t = T();
+  const box = document.getElementById("events");
+  if (!hasEvents) { box.innerHTML = `<p class="muted">${t.noEventColumn}</p>`; return; }
+  if (!events.length) { box.innerHTML = `<p class="muted">${t.noEvents}</p>`; return; }
+  box.innerHTML = `<div class="table-wrap"><table><tr><th>${t.date}</th><th>${t.gasCol}</th><th>${t.tempCol}</th><th>${t.hddCol}</th><th>${t.source}</th></tr>` +
+    events.map(r => `<tr><td>${r.date}</td><td>${fmt(r.gas_m3, 2)}</td><td>${fmt(r.temp_mean_c, 1)}</td><td>${fmt(r.hdd18, 1)}</td><td><span class="tag synthetic">${t.synthetic}</span></td></tr>`).join("") +
+    "</table></div>";
+}
+
+function renderProblems(problems, s) {
+  const t = T();
+  const box = document.getElementById("problems");
+  if (!problems.length) { box.innerHTML = `<p class="muted">${t.noProblems}</p>`; return; }
+  box.innerHTML = `<div class="table-wrap"><table><tr><th>${t.date}</th><th>${t.quality}</th><th>${t.whatsWrong}</th><th>${t.source}</th></tr>` +
+    problems.map(({ date, r }) => {
+      const synthetic = r ? r.synthetic_gap : s.dropped_days.includes(date);
+      return `<tr><td>${date}</td><td>${t.flag[r ? r.quality_flag : "none"]}</td><td>${problemText(r)}</td>` +
+        `<td>${synthetic ? `<span class="tag synthetic">${t.synthetic}</span>` : `<span class="tag">${t.real}</span>`}</td></tr>`;
+    }).join("") + "</table></div>";
+}
+
+pick.addEventListener("change", () => { selected = null; live.textContent = ""; render(); });
+document.querySelectorAll("input[name=wx]").forEach(r => r.addEventListener("change", render));
+window.addEventListener("resize", () => { if (selected) showTip(selected); });
+applyText();
+render();
+</script>
+</body>
+</html>
