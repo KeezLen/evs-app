@@ -8,7 +8,7 @@ Only high_use and missing have fake changes in them. Those rows are marked with 
 
 90 days of real data, nothing changed.
 
-**What should happen:** nothing special. Gas goes up on cold days and down on mild days. No events, no data problems.
+What should happen: nothing special. Gas goes up on cold days and down on mild days. No events, no data problems.
 
 ## high_use.csv
 
@@ -21,13 +21,13 @@ Same as normal, but gas was bumped up on four cold days. Those rows have synthet
 | 2013-02-22 | -2.0 | 10.8 | 17.2 | +60% |
 | 2013-03-12 | -2.5 | 9.5 | 13.8 | +45% |
 
-**What should happen:** event detection flags these four days and nothing else. They're all cold days, so it only works if you compare gas with the temperature, not with a flat average. A tip for these days shouldn't tell people to heat less than they need.
+What should happen: event detection flags these four days and nothing else. They're all cold days, so it only works if you compare gas with the temperature, not with a flat average. A tip for these days shouldn't tell people to heat less than they need.
 
 ## incomplete.csv
 
 Only the last 10 days (22-31 March), with the house columns (woning_type, bouwjaar_band, gezinssituatie) left empty. The meter data itself is real.
 
-**What should happen:** the app still runs, but it should say there isn't enough history for a proper profile yet. It shouldn't guess the house type.
+What should happen: the app still runs, but it should say there isn't enough history for a proper profile yet. It shouldn't guess the house type.
 
 ## missing.csv
 
@@ -44,4 +44,4 @@ Same as normal, with some days broken on purpose. Those rows have synthetic_gap 
 | 2013-03-06 | Emptied the whole day | missing |
 | 2013-03-18 | Some gas hours and quarter-hours missing, both empty | partial |
 
-**What should happen:** these eight days show up as data problems, not as low use or weird use. The two removed days have no row at all, so you can only find them by spotting the gap in the dates. Everything else should look the same as in normal.csv.
+What should happen: these eight days show up as data problems, not as low use or weird use. The two removed days have no row at all, so you can only find them by spotting the gap in the dates. Everything else should look the same as in normal.csv.
