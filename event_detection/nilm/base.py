@@ -13,7 +13,7 @@ class Detector(ABC):
 
     @abstractmethod
     def detect(self, series: Sequence[SeriesPoint]) -> list[Event]:
-        """Detect events from one normalized 15-minute series."""
+        """Detect events from one normalized series."""
 
 
 class DetectorRegistry:

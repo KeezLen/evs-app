@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 ModuleName = Literal["nilm", "anomaly"]
+EvaluationScenario = Literal["normal", "high_use", "missing", "incomplete"]
 
 
 class Event(BaseModel):
@@ -31,9 +32,18 @@ class DatasetInfo(BaseModel):
 
 class SeriesPoint(BaseModel):
     timestamp: datetime
-    electricity_w: float | None = None
-    gas_value: float | None = None
-    gas_unit: str | None = None
+    electricity_kwh: float | None = None
+    gas_m3: float | None = None
+    quality_flag: Literal["ok", "partial", "missing"]
+    n_elec_intervals: int | None = None
+    n_gas_hours: int | None = None
+    temp_mean_c: float | None = None
+    temp_min_c: float | None = None
+    temp_max_c: float | None = None
+    hdd18: float | None = None
+    woning_type: str | None = None
+    bouwjaar_band: str | None = None
+    gezinssituatie: str | None = None
 
 
 class DetectRequest(BaseModel):
@@ -47,6 +57,7 @@ class DetectRequest(BaseModel):
 
 class EvaluationRequest(DetectRequest):
     tolerance_minutes: int = Field(default=15, ge=0)
+    scenario: EvaluationScenario = "high_use"
 
 
 class EvaluationMetric(BaseModel):
@@ -59,8 +70,15 @@ class EvaluationMetric(BaseModel):
     matched: int
 
 
+class DataQualityIssue(BaseModel):
+    date: datetime
+    status: Literal["missing", "partial", "gap"]
+    details: str
+
+
 class EvaluationResponse(BaseModel):
     metrics: list[EvaluationMetric]
     tolerance_minutes: int
     source: str
     notes: list[str] = Field(default_factory=list)
+    data_quality: list[DataQualityIssue] = Field(default_factory=list)

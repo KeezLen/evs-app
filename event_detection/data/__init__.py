@@ -1,4 +1,4 @@
-"""Future dataset adapters live here; no dataset is bundled yet."""
+"""Dataset loading and catalog helpers."""
 
 from .catalog import available_datasets, get_series
 

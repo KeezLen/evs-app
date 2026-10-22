@@ -9,7 +9,7 @@ class Settings:
 
     api_title: str = "EVS Event Detection API"
     default_tolerance_minutes: int = 15
-    data_root: str = "event_detection/data/files"
+    data_root: str = "zonnedael_data"
 
 
 settings = Settings()

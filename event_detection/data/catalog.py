@@ -1,12 +1,11 @@
-"""Dataset boundary for the data team's future loaders.
-
-This module intentionally returns metadata and an empty series only. It does not
-pretend that public files or appliance labels have been added to this branch.
-"""
+"""Dataset catalog and access to normalized daily observations."""
 
 from datetime import datetime
 
 from event_detection.schemas import DatasetInfo, SeriesPoint
+from .loaders import ZonnedaelLoader
+
+_ZONNEDAEL_LOADER = ZonnedaelLoader()
 
 _DATASETS = [
     DatasetInfo(
@@ -20,18 +19,21 @@ _DATASETS = [
     DatasetInfo(
         id="zonnedael",
         name="Zonnedael",
-        households=[],
-        resolution_minutes=15,
-        available=False,
-        notes="Loader pending; gas is hourly and will remain explicitly coarse.",
+        households=sorted(_ZONNEDAEL_LOADER.included_households),
+        resolution_minutes=1440,
+        available=True,
+        notes="Daily T+1 aggregate data for included households. Missing and partial days are preserved.",
     ),
 ]
 
 
 def available_datasets() -> list[DatasetInfo]:
-    """Return the catalog without claiming that files or labels exist."""
+    """Return the datasets that can currently be selected."""
 
     return _DATASETS.copy()
+
+
+_LOADERS = {"zonnedael": _ZONNEDAEL_LOADER}
 
 
 def get_series(
@@ -40,7 +42,16 @@ def get_series(
     range_start: datetime | None = None,
     range_end: datetime | None = None,
 ) -> list[SeriesPoint]:
-    """Return future loader output; currently an empty, valid series."""
+    """Return one household's daily points, optionally restricted by date."""
 
-    del dataset, household, range_start, range_end
-    return []
+    try:
+        loader = _LOADERS[dataset]
+    except KeyError as error:
+        raise ValueError(f"Unknown dataset: {dataset}") from error
+    points = loader.load(household)
+    return [
+        point
+        for point in points
+        if (range_start is None or point.timestamp >= range_start)
+        and (range_end is None or point.timestamp <= range_end)
+    ]
