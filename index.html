@@ -1522,15 +1522,80 @@ function healthMessage(health, lang) {
 /** Days of recent history the choice looks at. A week smooths out one odd day. */
 const RECENT_DAYS = 7;
 
+function selectTipForEvent(event, tips, season, underHeating) {
+  if (!tips?.length) return null;
+
+  
+
+  let candidates = tips.filter((tip) => {
+    // Tip must belong to the detected event
+    if (
+      tip.conditions?.event &&
+      tip.conditions.event !== eventType
+    ) {
+      return false;
+    }
+
+    // Never recommend reducing heating when already under-heating
+    if (underHeating && tip.heating) {
+      return false;
+    }
+
+    // Respect seasonal rules
+    if (
+      tip.conditions?.seasons &&
+      !tip.conditions.seasons.includes(season)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  function scoreTip(tip) {
+    return (
+      (tip.priority ?? 0) * 10 +
+      (tip.ease ?? 0) * 5 +
+      (tip.euroPerYear ?? 0) / 20
+    );
+  }
+
+  candidates.sort(
+    (a, b) => scoreTip(b) - scoreTip(a)
+  );
+
+  const reason =
+    underHeating
+      ? 'comfort'
+      : eventType === 'high_gas'
+        ? 'gas'
+        : eventType === 'high_electricity'
+          ? 'elec'
+          : 'general';
+
+  return {
+    tip: candidates[0],
+    reason,
+    eventType,
+    eventConfidence: event?.confidence ?? null,
+    eventMagnitude: event?.magnitude ?? null
+  };
+}
+
 /**
  * Picks today's recommendation.
  *
  * @param {Array} expectedSeries  expected use per day, oldest first
  * @param {Array} readings        actual readings, same order and length
  * @param {Array} tips            candidates, each with `fuel` and `heating`
+ * @param season
  * @returns {{ tip, reason, gasDrift, elecDrift }|null}
  */
-function dailyRecommendation(expectedSeries, readings, tips) {
+function dailyRecommendation(event, tips, season, underHeating) {
   // A screen must never fail to render because advice could not be chosen.
   if (!expectedSeries?.length || !readings?.length || !tips?.length) return null;
 
@@ -1552,28 +1617,88 @@ function dailyRecommendation(expectedSeries, readings, tips) {
   // than that, so the home screen warned about under-heating and, on the same
   // screen, suggested turning the thermostat down. The feedback note of
   // 3 September 2026 caught it. Whatever the card says, the advice must agree.
-  const coldDays = readings.filter(
-    (r, i) => isBelowComfortFloor(expectedSeries[i].gas_m3, r.gas_m3)).length;
-  const underHeating = coldDays > 0;
+  const coldDays = readings.filter((r, i) => {
+  const expected = expectedSeries[i];
 
-  let reason;
-  let candidates;
-  if (underHeating) {
-    reason = 'comfort';
-    candidates = tips.filter((t) => !t.heating);
-  } else if (gasDrift >= elecDrift) {
-    reason = 'gas';
-    candidates = tips.filter((t) => t.fuel === 'gas');
-  } else {
-    reason = 'elec';
-    candidates = tips.filter((t) => t.fuel === 'elec');
+  if (!expected) {
+    return false;
   }
-  if (!candidates.length) candidates = tips;
 
-  // The day chooses between them, so the advice moves rather than repeating.
-  const index = dayOfYear(readings.at(-1).date) % candidates.length;
+  // Real data: ignore missing or partial rows
+  if (
+    r.quality_flag !== undefined &&
+    r.quality_flag !== 'ok'
+  ) {
+    return false;
+  }
 
-  return { tip: candidates[index], reason, gasDrift, elecDrift };
+  // Ignore missing gas values
+  if (
+    r.gas_m3 == null ||
+    !Number.isFinite(Number(r.gas_m3))
+  ) {
+    return false;
+  }
+
+  return isBelowComfortFloor(
+    expected.gas_m3,
+    Number(r.gas_m3)
+  );
+}).length;
+
+const underHeating = coldDays > 0;
+
+  let event;
+
+  if (gasDrift > 0 && gasDrift >= elecDrift) {
+    event = {
+      type: 'high_gas',
+      fuel: 'gas'
+    };
+  } else if (elecDrift > 0) {
+    event = {
+      type: 'high_electricity',
+      fuel: 'elec'
+    };
+  } else {
+    event = {
+      type: 'normal',
+      fuel: null
+    };
+  }
+  const selected = selectTipForEvent(
+  event,
+  tips,
+  season,
+  underHeating
+  );
+
+  if (!selected) {
+  return null;
+  }
+
+  return {
+  ...selected,
+  gasDrift,
+  elecDrift
+  };
+}
+function logAdviceExposure(advice, season) {
+  if (!advice?.tip) return;
+
+  const exposure = {
+    timestamp: new Date().toISOString(),
+    tipId: advice.tip.id,
+    ruleVersion: advice.tip.version,
+    reason: advice.reason,
+    gasDrift: advice.gasDrift,
+    elecDrift: advice.elecDrift,
+    season: season
+  };
+
+  console.log('Advice exposure:', exposure);
+
+  return exposure;
 }
 
 /** Why this tip, in the tenant's own terms. Never blames. */
@@ -1591,8 +1716,12 @@ function recommendationReason(reason, lang) {
       nl: 'Je stookt al zuinig. Dit advies gaat daarom niet over verwarmen.',
       en: 'You already heat sparingly, so this advice is not about heating.',
     },
+    general: {
+    nl: 'Je verbruik ligt op dit moment niet duidelijk hoger voor gas of stroom.',
+    en: 'Your usage is not clearly higher for either gas or electricity right now.',
+    },
   };
-  const entry = copy[reason] ?? copy.gas;
+  const entry = copy[reason] ?? copy.general;
   return entry[lang] ?? entry.nl;
 }
 
@@ -1635,6 +1764,14 @@ const HEATING_DAYS = HEATING_DAYS_PER_YEAR;
 const TIPS = Object.freeze([
   Object.freeze({
     id: 'thermostat', fuel: 'gas', heating: true,
+    version: 1,
+    priority: 3,
+    ease: 2,
+    source: 'Milieu Centraal',
+    conditions: {
+    event: 'high_gas',
+    seasons: ['autumn', 'winter']
+                },
     euroPerYear: THERMOSTAT_1C_EUR_PER_DAY * HEATING_DAYS,
     nl: { title: 'Thermostaat 1 graad lager',
           body: 'Van 20 naar 19 graden. Een trui scheelt meer dan je denkt.',
@@ -1645,7 +1782,14 @@ const TIPS = Object.freeze([
   }),
   Object.freeze({
     id: 'shower', fuel: 'gas', heating: false,
-    euroPerYear: 0.03 * PRICE_GAS_EUR_PER_M3 * 300,
+    version: 1,
+    priority: 2,
+    ease: 3,
+    source: 'Milieu Centraal',
+    conditions: {
+    event: 'high_gas'
+    },
+    euroPerYear: 0.03 * PRICE_GAS_EUR_PER_M3 * 300, 
     nl: { title: 'Drie minuten korter douchen',
           body: 'Van acht naar vijf minuten. Warm water is na verwarmen je grootste gaspost.',
           basis: '0,03 m3 gas per douchebeurt, 300 douchebeurten per jaar' },
@@ -1655,6 +1799,14 @@ const TIPS = Object.freeze([
   }),
   Object.freeze({
     id: 'unusedroom', fuel: 'gas', heating: true,
+    version: 1,
+    priority: 2,
+    ease: 2,
+    source: 'Milieu Centraal',
+    conditions: {
+    event: 'high_gas',
+    seasons: ['autumn', 'winter']
+    },
     euroPerYear: 0.05 * PRICE_GAS_EUR_PER_M3 * HEATING_DAYS,
     nl: { title: 'Radiator uit in een kamer die je niet gebruikt',
           body: 'Houd de deur dicht. Laat het nooit onder de 15 graden komen, anders krijg je vocht.',
@@ -1665,6 +1817,13 @@ const TIPS = Object.freeze([
   }),
   Object.freeze({
     id: 'coldwash', fuel: 'elec', heating: false,
+    version: 1,
+    priority: 2,
+    ease: 3,
+    source: 'Milieu Centraal',
+    conditions: {
+    event: 'high_electricity'
+      },
     euroPerYear: 0.4 * PRICE_ELEC_EUR_PER_KWH * 60,
     nl: { title: 'Was op 30 graden',
           body: 'Voor gewone was is 30 graden genoeg.',
@@ -1675,6 +1834,13 @@ const TIPS = Object.freeze([
   }),
   Object.freeze({
     id: 'standby', fuel: 'elec', heating: false,
+    version: 1,
+    priority: 2,
+    ease: 3,
+    source: 'Milieu Centraal',
+    conditions: {
+    event: 'high_electricity'
+    },
     euroPerYear: 0.006 * 24 * 365 * PRICE_ELEC_EUR_PER_KWH,
     nl: { title: 'Apparaten echt uit in plaats van stand-by',
           body: 'Een stekkerdoos met schakelaar doet het werk voor je.',
@@ -1683,8 +1849,222 @@ const TIPS = Object.freeze([
           body: 'A power strip with a switch does the work for you.',
           basis: '6 watts of standby draw (router and TV), day and night' },
   }),
-]);
+  Object.freeze({
+  id: 'lights',
+  fuel: 'elec',
+  heating: false,
 
+  version: 1,
+  priority: 2,
+  ease: 3,
+  source: 'Milieu Centraal',
+
+  conditions: {
+    event: 'high_electricity'
+  },
+
+  euroPerYear: 20, //euh je dois verifier cela
+
+  nl: {
+    title: 'Doe lampen uit in kamers die je niet gebruikt',
+    body: 'Laat verlichting alleen aan waar je die nodig hebt.',
+    basis: 'Geschatte besparing door minder onnodige verlichting'
+  },
+
+  en: {
+    title: 'Turn off lights in rooms you are not using',
+    body: 'Only keep lights on where you need them.',
+    basis: 'Estimated saving from reducing unnecessary lighting'
+  }
+}),
+Object.freeze({
+  id: 'curtains',
+  fuel: 'gas',
+  heating: true,
+
+  version: 1,
+  priority: 2,
+  ease: 3,
+  source: 'Milieu Centraal',
+
+  conditions: {
+    event: 'high_gas',
+    seasons: ['autumn', 'winter']
+  },
+
+  euroPerYear: 30 *PRICE_GAS_EUR_PER_M3, //I need to look at source to check this
+
+  nl: {
+    title: 'Doe \'s avonds de gordijnen dicht',
+    body: 'Gesloten gordijnen helpen warmte binnen te houden op koude dagen.',
+    basis: 'Ongeveer 30 m3 gas per jaar bij dubbel glas en gewone gordijnen'
+  },
+
+  en: {
+    title: 'Close the curtains in the evening',
+    body: 'Closed curtains can help keep heat inside on cold days.',
+    basis: 'About 30 m3 of gas per year with double glazing and ordinary curtains'
+  }
+}),
+Object.freeze({
+  id: 'closeddoors',
+  fuel: 'gas',
+  heating: true,
+
+  version: 1,
+  priority: 2,
+  ease: 3,
+  source: 'Milieu Centraal',
+
+  conditions: {
+    event: 'high_gas',
+    seasons: ['autumn', 'winter']
+  },
+
+  euroPerYear:  (80 / 1.37) * PRICE_GAS_EUR_PER_M3,
+
+  nl: {
+    title: 'Verwarm alleen de kamers die je gebruikt',
+    body: 'Zet de verwarming lager of uit in kamers waar je niet bent en houd de deuren dicht.',
+   basis: 'Ongeveer 58,4 m3 gas per jaar, gebaseerd op €80 besparing bij €1,37 per m3 gas'
+  },
+
+  en: {
+    title: 'Only heat the rooms you use',
+    body: 'Turn the heating down or off in rooms you are not using and keep the doors closed.',
+    basis: 'About 58.4 m3 of gas per year, based on an €80 saving at €1.37 per m3 of gas'
+  }
+}),
+
+]);
+function runAdviceTests() {
+  const expected = Array.from({ length: 7 }, (_, i) => ({
+    date: `2026-01-${String(i + 1).padStart(2, '0')}`,
+    gas_m3: 2,
+    elec_kwh: 4
+  }));
+
+  function makeReadings(gas, elec) {
+    return expected.map((e) => ({
+      date: e.date,
+      gas_m3: gas,
+      elec_kwh: elec
+    }));
+  }
+
+  function check(name, condition) {
+    console.assert(condition, `TEST FAILED: ${name}`);
+
+    if (condition) {
+      console.log(`PASS: ${name}`);
+    }
+  }
+
+  // High gas should return a gas tip
+  let result = dailyRecommendation(
+    expected,
+    makeReadings(3, 4),
+    TIPS,
+    'winter'
+  );
+
+  check(
+    'high gas returns gas tip',
+    result?.tip?.fuel === 'gas'
+  );
+
+  // High electricity should return electricity tip
+  result = dailyRecommendation(
+    expected,
+    makeReadings(2, 6),
+    TIPS,
+    'winter'
+  );
+
+  check(
+    'high electricity returns electricity tip',
+    result?.tip?.fuel === 'elec'
+  );
+
+  // Under-heating must never return heating-reduction advice
+  result = dailyRecommendation(
+    expected,
+    makeReadings(1, 4),
+    TIPS,
+    'winter'
+  );
+
+  check(
+    'under-heating blocks heating tips',
+    result === null || result.tip.heating === false
+  );
+
+  // Winter-only thermostat is allowed in winter
+  const thermostat = TIPS.find((t) => t.id === 'thermostat');
+
+  result = dailyRecommendation(
+    expected,
+    makeReadings(3, 4),
+    [thermostat],
+    'winter'
+  );
+
+  check(
+    'thermostat allowed in winter',
+    result?.tip?.id === 'thermostat'
+  );
+
+  // Winter-only thermostat must not appear in summer
+  result = dailyRecommendation(
+    expected,
+    makeReadings(3, 4),
+    [thermostat],
+    'summer'
+  );
+
+  check(
+    'thermostat blocked in summer',
+    result === null
+  );
+
+  // Empty input
+  result = dailyRecommendation([], [], TIPS, 'winter');
+
+  check(
+    'empty input returns null',
+    result === null
+  );
+
+  // Test every individual rule
+  TIPS.forEach((tip) => {
+    const event = tip.conditions?.event;
+
+    const readings =
+      event === 'high_electricity'
+        ? makeReadings(2, 6)
+        : makeReadings(3, 4);
+
+    const season =
+      tip.conditions?.seasons?.includes('winter')
+        ? 'winter'
+        : 'summer';
+
+    const ruleResult = dailyRecommendation(
+      expected,
+      readings,
+      [tip],
+      season
+    );
+
+    check(
+      `rule ${tip.id} can be selected`,
+      ruleResult?.tip?.id === tip.id
+    );
+  });
+
+  console.log('Advice tests finished');
+}
+//runAdviceTests(); //for testing purposes  
 /** Tips ranked by yearly saving, largest first. */
 function rankedTips() {
   return [...TIPS].sort((a, b) => b.euroPerYear - a.euroPerYear);
@@ -1695,7 +2075,7 @@ function rankedTips() {
  * The notification and tip history (demonstrator brief, section 3).
  *
  * The brief merges Report 6's daily tip with Report 5's notification mechanic
- * into one card on the dashboard, and puts a history screen behind that card.
+ * into one card on the dashboard, and puts a history screen behind that card.J
  * This builds the history from the days that actually exist, so the dates on
  * screen match the meter readings rather than being invented.
  *
@@ -3405,7 +3785,10 @@ function renderHome(app, state, lang) {
   const stageName = stage[lang] || stage.nl;
   // Chosen from this household's own recent readings, and never a
   // turn-the-heating-down tip for someone already under the comfort floor.
-  const advice = dailyRecommendation(app.expectedSeries, readings, TIPS);
+  const advice = dailyRecommendation(app.expectedSeries, readings, TIPS, app.season);
+  if (advice) {
+  logAdviceExposure(advice, app.season);
+  }
   const topTip = advice ? advice.tip : rankedTips()[0];
 
   // Euro stays visually dominant (Report 6's survey: 69.6% preferred euros);
