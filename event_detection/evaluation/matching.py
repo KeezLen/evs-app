@@ -9,9 +9,9 @@ from event_detection.schemas import Event
 def match_events(
     detected: Sequence[Event],
     ground_truth: Sequence[Event],
-    tolerance_minutes: int = 15,
+    tolerance_minutes: int = 1440,
 ) -> dict[str, int]:
-    """Match same-type events that start within the allowed time window."""
+    """Match same-type daily events within the allowed time window."""
 
     tolerance = timedelta(minutes=tolerance_minutes)
     remaining = list(ground_truth)

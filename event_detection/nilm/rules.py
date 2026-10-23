@@ -11,8 +11,8 @@ from .base import Detector, detector_registry
 class RuleBasedDetector(Detector):
     """Flag valid daily readings that are substantially above a baseline.
 
-    Electricity uses the household median. Gas uses a least-squares relationship
-    with heating degree days so cold-weather heating is not treated as unusual.
+    Electricity uses the household median. Gas uses a robust relationship with
+    heating degree days so cold-weather heating is not treated as unusual.
     Partial and missing points never contribute to a baseline or event.
     """
 
@@ -21,6 +21,7 @@ class RuleBasedDetector(Detector):
     electricity_delta_kwh = 5.0
     gas_ratio = 1.4
     gas_delta_m3 = 4.0
+    minimum_gas_history = 14
 
     def detect(self, series: Sequence[SeriesPoint]) -> list[Event]:
         """Compare valid readings with electricity and gas baselines."""
@@ -45,7 +46,7 @@ class RuleBasedDetector(Detector):
             point for point in valid
             if point.gas_m3 is not None and point.hdd18 is not None
         ]
-        if len(gas_points) >= 3:
+        if len(gas_points) >= self.minimum_gas_history:
             # Heating degree days make cold-day gas use less surprising.
             intercept, slope = self._gas_baseline(gas_points)
             for point in gas_points:
@@ -61,19 +62,23 @@ class RuleBasedDetector(Detector):
 
     @staticmethod
     def _gas_baseline(points: Sequence[SeriesPoint]) -> tuple[float, float]:
-        """Fit a straight line between heating degree days and gas use."""
-        x_values = [point.hdd18 for point in points if point.hdd18 is not None]
-        y_values = [point.gas_m3 for point in points if point.gas_m3 is not None]
-        x_mean = sum(x_values) / len(x_values)
-        y_mean = sum(y_values) / len(y_values)
-        denominator = sum((value - x_mean) ** 2 for value in x_values)
-        slope = (
-            sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, y_values))
-            / denominator
-            if denominator
-            else 0.0
-        )
-        return y_mean - slope * x_mean, slope
+        """Fit a robust line between heating degree days and gas use."""
+        pairs = [
+            (point.hdd18, point.gas_m3)
+            for point in points
+            if point.hdd18 is not None and point.gas_m3 is not None
+        ]
+        slopes = [
+            (second_y - first_y) / (second_x - first_x)
+            for index, (first_x, first_y) in enumerate(pairs)
+            for second_x, second_y in pairs[index + 1:]
+            if second_x != first_x
+        ]
+        if not slopes:
+            return median(value for _, value in pairs), 0.0
+        slope = median(slopes)
+        intercept = median(y - slope * x for x, y in pairs)
+        return intercept, slope
 
     def _event(self, point: SeriesPoint, event_type: str, value: float, baseline: float) -> Event:
         """Build a generic event without guessing an appliance."""

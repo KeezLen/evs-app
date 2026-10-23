@@ -38,8 +38,10 @@ as breaks in the chart.
   changing household does not cause a failed evaluation request.
 
 `/detect` uses the initial `rules` method for valid daily points. It compares
-electricity with the household median and gas with a heating-degree-day
-baseline. Partial and missing points are ignored, not treated as zero use.
+electricity with the household median and gas with a robust heating-degree-day
+baseline. Gas detection requires at least 14 valid observations so short date
+ranges are not treated as a reliable household profile. Partial and missing
+points are ignored, not treated as zero use.
 `/evaluate` accepts `scenario` (`normal`, `high_use`, `missing`, or
 `incomplete`) and evaluates the rules against the transparent Klant 34
 fixtures. Synthetic event rows are ground truth for evaluation only; they are
@@ -64,6 +66,9 @@ The initial rules are deliberately conservative and generic: they report
 `high_electricity` and `high_gas`, not appliance names. The thresholds are
 documented in `event_detection/nilm/rules.py` and are intended as a baseline
 for later prediction methods.
+
+Evaluation defaults to a one-day event-start tolerance because Zonnedael is a
+daily dataset. A smaller tolerance can still be supplied explicitly.
 
 ## Ground truth
 

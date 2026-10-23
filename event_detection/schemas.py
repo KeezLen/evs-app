@@ -56,7 +56,7 @@ class DetectRequest(BaseModel):
 
 
 class EvaluationRequest(DetectRequest):
-    tolerance_minutes: int = Field(default=15, ge=0)
+    tolerance_minutes: int = Field(default=1440, ge=0)
     scenario: EvaluationScenario = "high_use"
 
 

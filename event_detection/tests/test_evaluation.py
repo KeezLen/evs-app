@@ -33,6 +33,14 @@ def test_matching_uses_a_configurable_time_tolerance():
     assert match_events(detected, truth, tolerance_minutes=0)["matched"] == 0
 
 
+def test_matching_defaults_to_daily_tolerance():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    detected = [Event(id="d", type="high_gas", start=start, end=start, magnitude=1, confidence=1, method="rules")]
+    truth = [Event(id="t", type="high_gas", start=start.replace(day=2), end=start, magnitude=1, confidence=1, method="ground_truth")]
+
+    assert match_events(detected, truth)["matched"] == 1
+
+
 def test_high_use_scenario_exposes_synthetic_truth():
     # This fixture contains four known artificial gas increases.
     points, truth, quality = load_scenario("high_use", "Klant 34")
