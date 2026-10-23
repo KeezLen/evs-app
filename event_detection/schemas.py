@@ -82,3 +82,21 @@ class EvaluationResponse(BaseModel):
     source: str
     notes: list[str] = Field(default_factory=list)
     data_quality: list[DataQualityIssue] = Field(default_factory=list)
+
+
+class HouseholdContext(BaseModel):
+    energy_label: Literal["A++++", "A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"] | None = None
+    floor_area_m2: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    work_schedule: str | None = Field(default=None, max_length=200)
+    sleep_schedule: str | None = Field(default=None, max_length=200)
+
+
+class ProfileRequest(BaseModel):
+    dataset: str
+    household: str
+    home: HouseholdContext = Field(default_factory=HouseholdContext)
+
+
+class ProfileResponse(BaseModel):
+    dataset: str
+    profile: dict[str, Any]

@@ -3625,6 +3625,7 @@ function renderProfile(app, state, lang) {
   return '<h2>' + say('Profiel', 'Profile', lang) + '</h2>'
     // The same five answers the tenant gave during registration, worded the
     // same way, so nothing looks like a different question on the way back.
+    + card(say('Huishoudprofiel', 'Household profile', lang), '<button class="btn" data-open="household-builder">' + say('Bouw profiel uit metergegevens', 'Build profile from meter data', lang) + '</button>')
     + card(say('Je woning', 'Your home', lang),
         statRow(say('Postcodegebied', 'Postcode area', lang), state.home.postcode)
         + statRow(say('Kamers', 'Rooms', lang), String(state.home.rooms))
@@ -3700,6 +3701,89 @@ function renderProfile(app, state, lang) {
         + say('nog niet bevestigd', 'not yet confirmed', lang) + '</strong>.</p>'
         + '<h4>' + say('Ondergrens voor comfort', 'Comfort floor', lang) + '</h4>'
         + '<p class="note">' + floorNote + '</p>');
+}
+
+// Household profile builder uses the same API base, cards and controls as Events.
+function renderHouseholdBuilder(app, state, lang) {
+  const label = (nl, en) => say(nl, en, lang);
+  return '<h2>' + label('Huishoudprofiel bouwen', 'Build household profile') + '</h2>'
+    + '<p class="note">' + label('Een kort overzicht van je dagelijkse verbruik.', 'A quick overview of your daily usage.') + '</p>'
+    + card(label('Gegevens kiezen', 'Select data'), '<form id="hp-form"><div class="evt-controls">'
+      + '<label class="evt-control">Dataset<select id="hp-dataset" required disabled></select></label>'
+      + '<label class="evt-control">' + label('Huishouden', 'Household') + '<select id="hp-household" required disabled></select></label>'
+      + '</div><details><summary>' + label('Woninginformatie (optioneel)', 'Home information (optional)') + '</summary><div class="evt-controls">'
+      + '<label class="evt-control">' + label('Energielabel', 'Energy label') + '<select id="hp-label"><option value="">—</option>' + ['A++++','A+++','A++','A+','A','B','C','D','E','F','G'].map(v => '<option>' + v + '</option>').join('') + '</select></label>'
+      + '<label class="evt-control">' + label('Oppervlakte (m²)', 'Floor area (m²)') + '<input id="hp-area" type="number" min="0.1" step="any"></label>'
+      + '<label class="evt-control">' + label('Werktijden', 'Work schedule') + '<input id="hp-work" maxlength="200"></label>'
+      + '<label class="evt-control">' + label('Slaaptijden', 'Sleep schedule') + '<input id="hp-sleep" maxlength="200"></label>'
+      + '</div></details><button class="btn" id="hp-build" disabled>' + label('Profiel bouwen', 'Build profile') + '</button></form>')
+    + '<p id="hp-status" class="evt-status" role="status" aria-live="polite"></p><div id="hp-result"></div>';
+}
+
+async function mountHouseholdBuilder(container, lang) {
+  const label = (nl, en) => say(nl, en, lang);
+  const find = (id) => container.querySelector('#hp-' + id);
+  const status = find('status');
+  const api = async (path, options) => {
+    const response = await fetch(EVT_API_BASE + path, options);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(typeof body.detail === 'string' ? body.detail : 'HTTP ' + response.status);
+    }
+    return response.json();
+  };
+  const showError = (error) => { status.textContent = label('Kan niet laden: ', 'Unable to load: ') + error.message; status.classList.add('warn'); };
+  const fmt = (v) => v == null ? '—' : new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(v);
+  status.textContent = label('Datasets laden…', 'Loading datasets…');
+  try {
+    const datasets = await api('/datasets');
+    if (!container.isConnected) return;
+    find('dataset').innerHTML = datasets.filter(d => d.available).map(d => '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>').join('');
+    const update = () => {
+      const selected = datasets.find(d => d.id === find('dataset').value);
+      find('household').innerHTML = (selected?.households || []).map(h => '<option value="' + escapeHtml(h) + '">' + escapeHtml(h) + '</option>').join('');
+      find('household').disabled = !selected?.households.length;
+      find('build').disabled = find('household').disabled;
+      find('result').innerHTML = '';
+    };
+    find('dataset').disabled = !datasets.length;
+    find('dataset').addEventListener('change', update);
+    update();
+    status.textContent = label('Kies gegevens en bouw een profiel.', 'Select data and build a profile.');
+  } catch (error) { showError(error); }
+  find('form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    find('build').disabled = true;
+    find('result').innerHTML = '';
+    status.classList.remove('warn');
+    status.textContent = label('Profiel berekenen…', 'Building profile…');
+    try {
+      const result = await api('/profiles/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        dataset: find('dataset').value, household: find('household').value,
+        home: {energy_label: find('label').value || null, floor_area_m2: find('area').value ? Number(find('area').value) : null, work_schedule: find('work').value || null, sleep_schedule: find('sleep').value || null},
+
+      }) });
+      if (!container.isConnected) return;
+      const p = result.profile;
+      const weekday = (day) => new Intl.DateTimeFormat(lang, {weekday: 'short', timeZone: 'UTC'}).format(new Date(Date.UTC(2024, 0, 1 + day)));
+      const html = card(escapeHtml(p.household_id),
+        statRow(label('Periode', 'Period'), escapeHtml(p.period.start + ' – ' + p.period.end))
+        + statRow(label('Stroom per dag', 'Electricity per day'), fmt(p.fuels.electricity_kwh.mean_daily) + ' kWh')
+        + statRow(label('Gas per dag', 'Gas per day'), fmt(p.fuels.gas_m3.mean_daily) + ' m³')
+        + statRow(label('Hoogste stroomverbruik', 'Highest electricity usage'), p.fuels.electricity_kwh.highest_usage_weekdays.map(weekday).join(', ') || '—')
+        + '<details><summary>' + label('Dagpatroon en woning', 'Daily pattern and home') + '</summary>'
+        + Object.entries(p.fuels.electricity_kwh.by_weekday).map(([day, value]) => statRow(weekday(Number(day)), fmt(value) + ' kWh')).join('')
+        + statRow(label('Energielabel', 'Energy label'), escapeHtml(p.home.energy_label || '—'))
+        + statRow(label('Oppervlakte', 'Floor area'), fmt(p.home.floor_area_m2) + ' m²')
+        + statRow(label('Werktijden', 'Work schedule'), escapeHtml(p.home.work_schedule || '—'))
+        + statRow(label('Slaaptijden', 'Sleep schedule'), escapeHtml(p.home.sleep_schedule || '—'))
+        + '</details>')
+        + '<p class="note">' + label('Dagtotalen: piekuren en nachtverbruik zijn niet beschikbaar.', 'Daily totals: peak hours and night usage are unavailable.') + '</p>';
+      find('result').innerHTML = html;
+      status.textContent = label('Profiel gebouwd.', 'Profile built.');
+    } catch (error) { showError(error); }
+    finally { if (container.isConnected) find('build').disabled = false; }
+  });
 }
 
 // ---- event detection tab ----
@@ -3860,6 +3944,7 @@ function mountEventDetection(container) {
 const BOTTOM_TABS = Object.freeze(['home', 'savings', 'challenges', 'tips', 'event-detection', 'profile']);
 
 const TABS = Object.freeze([
+  Object.freeze({ id: 'household-builder', icon: '\u{1F3E0}', nl: 'Huishoudprofiel', en: 'Household builder', render: renderHouseholdBuilder }),
   Object.freeze({ id: 'home', icon: '\u{1F333}', nl: 'Start', en: 'Home', render: renderHome }),
   Object.freeze({ id: 'savings', icon: '\u{1F4B6}', nl: 'Besparing', en: 'Savings', render: renderSavings }),
   Object.freeze({ id: 'challenges', icon: '\u{1F3AF}', nl: 'Uitdagingen', en: 'Challenges', render: renderChallenges }),
@@ -4303,6 +4388,7 @@ function start(getApp, store) {
     bar.innerHTML = header(title, state.language);
     screen.innerHTML = tab.render(app, state, state.language) + footerNote(app, state.language);
     if (active === 'event-detection') mountEventDetection(screen);
+    if (active === 'household-builder') mountHouseholdBuilder(screen, state.language);
     // Outside #screen, so the bar stays put while the content scrolls.
     tabs.innerHTML = tabBar(active, state.language);
     nav.innerHTML = infoOpen ? infoSheet(active, title, state.language) : '';

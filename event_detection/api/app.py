@@ -6,12 +6,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from event_detection.config import settings
+from event_detection.household_profile import build_profile
 from event_detection.data import available_datasets, get_series
 from event_detection.anomaly.placeholder import PlaceholderAnomalyDetector
 from event_detection.evaluation.matching import match_events
 from event_detection.evaluation.scenarios import load_scenario
 from event_detection.nilm import detector_registry
 from event_detection.schemas import (
+    ProfileRequest,
+    ProfileResponse,
     DetectRequest,
     EvaluationMetric,
     EvaluationRequest,
@@ -36,7 +39,7 @@ def root():
         "service": settings.api_title,
         "status": "ok",
         "docs": "/docs",
-        "endpoints": ["/datasets", "/series", "/detect", "/evaluate"],
+        "endpoints": ["/datasets", "/series", "/detect", "/evaluate", "/profiles/build"],
     }
 
 
@@ -132,3 +135,14 @@ def evaluate(request: EvaluationRequest):
         ],
         data_quality=quality,
     )
+
+
+@app.post("/profiles/build", response_model=ProfileResponse)
+def profile_build(request: ProfileRequest):
+    """Summarize the same normalized daily series used by event detection."""
+    try:
+        points = get_series(request.dataset, request.household)
+        profile = build_profile(points, request.household, request.home.model_dump())
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return ProfileResponse(dataset=request.dataset, profile=profile)
