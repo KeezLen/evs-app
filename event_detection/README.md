@@ -1,16 +1,24 @@
 # Event detection
 
 This is a standalone FastAPI boundary for the Energieverdienspel dashboard.
-Zonnedael is available as validated daily aggregate data. GridFlex remains
-unavailable; the initial daily rules detector is implemented.
+Zonnedael is available as validated daily, hourly, and 15-minute electricity
+data. GridFlex remains unavailable; the initial rules detector is implemented.
 
 ## Run
 
 ```powershell
-py -3.11 -m venv .venv
+py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn event_detection.api.app:app --reload
+python -m pip install -r requirements.txt
+python -m uvicorn event_detection.api.app:app --reload
+```
+
+Run these commands from the repository root (`evs-app`). If PowerShell blocks
+the activation script, use the virtual environment directly instead:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn event_detection.api.app:app --reload
 ```
 
 The dashboard uses `http://127.0.0.1:8000` by default. Override it before
@@ -18,15 +26,17 @@ opening the HTML with `window.EVS_EVENT_API_BASE_URL`.
 
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose
-a date range, and click **Run detection**. The tab loads the daily series before
-running the detector and plots valid electricity readings; gaps remain visible
-as breaks in the chart.
+a date range, and click **Run detection**. The tab loads the selected series
+before running the detector and plots valid electricity readings; gaps remain
+visible as breaks in the chart.
 
 ## API
 
 - `GET /datasets` returns the catalog and availability notes.
-- `GET /series?dataset=...&household=...` returns normalized daily points for
-  included Zonnedael households.
+- `GET /series?dataset=...&household=...` returns normalized points for
+  included Zonnedael households. The dataset IDs are `zonnedael` (daily),
+  `zonnedael_hourly` (hourly electricity, gas, and temperature), and
+  `zonnedael_15min_electricity` (quarter-hour electricity only).
 - `POST /detect` accepts `dataset`, `household`, `range_start`, `range_end`,
   `module` (`nilm` or `anomaly`) and `method`.
 - `POST /evaluate` uses the same request plus `tolerance_minutes` and a
@@ -51,9 +61,10 @@ separately as `data_quality`.
 ## Adding data
 
 Implement `DatasetLoader` in `event_detection/data/loaders.py` for new sources.
-The Zonnedael loader returns one `SeriesPoint` per day, preserving quality flags,
-missing values, weather fields, and household metadata. It exposes only homes
-marked `included=True` in `household_summary.csv`.
+The Zonnedael loaders return normalized `SeriesPoint` values while preserving
+quality flags and missing values. The daily loader also includes weather and
+household metadata. All loaders expose only homes marked `included=True` in
+`household_summary.csv`.
 
 ## Adding detectors
 
@@ -65,7 +76,8 @@ the JSON contract. Anomaly detectors stay in `event_detection/anomaly/`.
 The initial rules are deliberately conservative and generic: they report
 `high_electricity` and `high_gas`, not appliance names. The thresholds are
 documented in `event_detection/nilm/rules.py` and are intended as a baseline
-for later prediction methods.
+for later prediction methods. Event end times follow each point's interval
+length, so granular detections are bounded to one hour or 15 minutes.
 
 Evaluation defaults to a one-day event-start tolerance because Zonnedael is a
 daily dataset. A smaller tolerance can still be supplied explicitly.

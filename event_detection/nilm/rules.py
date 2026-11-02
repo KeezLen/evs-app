@@ -86,7 +86,7 @@ class RuleBasedDetector(Detector):
             id=f"{event_type}:{point.timestamp.isoformat()}",
             type=event_type,
             start=point.timestamp,
-            end=point.timestamp + timedelta(days=1),
+            end=point.timestamp + timedelta(minutes=point.interval_minutes),
             magnitude=round(value - baseline, 3),
             confidence=min(1.0, round((value - baseline) / max(value, 1e-9), 3)),
             method=self.name,

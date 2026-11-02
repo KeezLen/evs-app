@@ -32,6 +32,7 @@ class DatasetInfo(BaseModel):
 
 class SeriesPoint(BaseModel):
     timestamp: datetime
+    interval_minutes: int = Field(default=1440, gt=0)
     electricity_kwh: float | None = None
     gas_m3: float | None = None
     quality_flag: Literal["ok", "partial", "missing"]

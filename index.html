@@ -3712,17 +3712,17 @@ const EVT_COLORS = Object.freeze({
 
 function renderEventDetection() {
   return '<section id="evt-detection" data-view="event-detection">'
-    + '<h2>Daily event detection</h2>'
-    + '<p class="note">The initial rules compare daily electricity with a household baseline and daily gas with a temperature-aware baseline. They describe unusual consumption patterns without attributing them to an appliance.</p>'
+    + '<h2>Event detection</h2>'
+    + '<p class="note">The initial rules compare electricity with a household baseline and gas with a temperature-aware baseline. They describe unusual consumption patterns without attributing them to an appliance.</p>'
     + '<section class="card"><h3>Detection controls</h3><div class="evt-controls">'
-    + '<label class="evt-control">Dataset<select id="evt-dataset"><option value="zonnedael">Zonnedael (daily)</option><option value="gridflex_heeten" disabled>GridFlex Heeten (not available)</option></select></label>'
+    + '<label class="evt-control">Dataset<select id="evt-dataset"><option value="zonnedael">Loading datasets...</option></select></label>'
     + '<label class="evt-control">Household<select id="evt-household"><option value="">Loading households...</option></select></label>'
     + '<label class="evt-control">From<input id="evt-from" type="datetime-local"></label>'
     + '<label class="evt-control">To<input id="evt-to" type="datetime-local"></label>'
     + '<label class="evt-control">Method<select id="evt-module"><option value="nilm">Documented baseline rules</option><option value="anomaly" disabled>Anomaly detection (not implemented)</option></select></label>'
     + '</div><div class="evt-actions"><button class="btn" id="evt-run">Run rules</button></div></section>'
     + '<p id="evt-status" class="evt-status">Ready. Backend: ' + escapeHtml(EVT_API_BASE) + '</p>'
-    + '<section class="card"><h3>Daily electricity</h3><p class="evt-muted">Missing and partial readings appear as gaps and are excluded from detection. Gas events are marked by date on this shared timeline.</p><div id="evt-chart" class="evt-chart"><p class="evt-muted">No daily series loaded.</p></div><div id="evt-legend" class="evt-legend"></div></section>'
+    + '<section class="card"><h3>Electricity series</h3><p class="evt-muted">Missing and partial readings appear as gaps and are excluded from detection. Gas events are marked on this shared timeline.</p><div id="evt-chart" class="evt-chart"><p class="evt-muted">No series loaded.</p></div><div id="evt-legend" class="evt-legend"></div></section>'
     + '<section class="card"><h3>Detected patterns</h3><div class="evt-table-wrap"><table class="evt-table"><thead><tr>'
     + '<th><button data-evt-sort="type">Type</button></th><th><button data-evt-sort="start">Time</button></th><th><button data-evt-sort="magnitude">Size</button></th><th><button data-evt-sort="confidence">Confidence</button></th></tr></thead><tbody id="evt-events"><tr><td colspan="4" class="evt-muted">No events loaded.</td></tr></tbody></table></div></section>'
     + '<section class="card"><h3>Test the detection rules</h3><p class="evt-evaluation-explainer"><strong>This is a developer check, not a household result.</strong><br>It runs the same rules on prepared examples where the expected synthetic changes are known. This helps us measure whether the rules find unusual use without confusing missing data for behaviour.</p><p class="evt-evaluation-meta"><strong>Fixture household:</strong> Klant 34 &middot; <strong>Scenarios:</strong> synthetic test files</p><div class="evt-controls"><label class="evt-control">Test case<select id="evt-scenario"><option value="high_use">High use: four injected gas increases</option><option value="normal">Normal use: no injected events</option><option value="missing">Missing data: gaps and partial readings</option><option value="incomplete">Short history: ten days only</option></select></label></div><button class="btn ghost evt-evaluate" id="evt-evaluate">Run test case for Klant 34</button><p id="evt-evaluation-source" class="evt-muted">No test case run yet.</p><div id="evt-metrics" class="evt-metric-grid"></div><div id="evt-quality" class="evt-quality"></div></section>'
@@ -3779,6 +3779,7 @@ function evtDrawChart(chart, legend, points, events, selectedId) {
 
 function mountEventDetection(container) {
   let points = []; let events = []; let selectedId = null; let sortBy = 'start'; let sortAscending = true;
+  let datasets = [];
   const status = container.querySelector('#evt-status');
   const chart = container.querySelector('#evt-chart');
   const legend = container.querySelector('#evt-legend');
@@ -3786,15 +3787,23 @@ function mountEventDetection(container) {
   const setStatus = (text, warning = false) => { status.textContent = text; status.classList.toggle('warn', warning); };
   const loadHouseholds = async () => {
     const householdSelect = container.querySelector('#evt-household');
+    const datasetSelect = container.querySelector('#evt-dataset');
     try {
       const response = await fetch(EVT_API_BASE + '/datasets');
       if (!response.ok) throw new Error('Datasets HTTP ' + response.status);
-      const datasets = await response.json();
-      const dataset = datasets.find((item) => item.id === 'zonnedael');
+      datasets = await response.json();
+      datasetSelect.innerHTML = datasets.filter((item) => item.available).map((item) => '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.name) + ' (' + item.resolution_minutes + ' min)</option>').join('');
+      const dataset = datasets.find((item) => item.id === datasetSelect.value);
       const households = dataset?.households || [];
       householdSelect.innerHTML = households.map((household) => '<option value="' + escapeHtml(household) + '">' + escapeHtml(household) + '</option>').join('');
       if (!households.length) throw new Error('No included households returned');
       householdSelect.value = households.includes('Klant 34') ? 'Klant 34' : households[0];
+      datasetSelect.addEventListener('change', () => {
+        const selected = datasets.find((item) => item.id === datasetSelect.value);
+        const selectedHouseholds = selected?.households || [];
+        householdSelect.innerHTML = selectedHouseholds.map((household) => '<option value="' + escapeHtml(household) + '">' + escapeHtml(household) + '</option>').join('');
+        householdSelect.value = selectedHouseholds.includes('Klant 34') ? 'Klant 34' : selectedHouseholds[0] || '';
+      });
     } catch (error) {
       householdSelect.innerHTML = '<option value="Klant 34">Klant 34</option>';
       setStatus('Could not load the household list. Using Klant 34: ' + error.message, true);
@@ -3806,9 +3815,13 @@ function mountEventDetection(container) {
     evtDrawChart(chart, legend, points, events, selectedId);
   };
   const run = async (evaluate) => {
+    const request = evtRequest(container);
+    if (evaluate && request.dataset !== 'zonnedael') {
+      setStatus('Scenario evaluation is available for the daily Zonnedael dataset only.', true);
+      return;
+    }
     setStatus('Loading event detection...');
     try {
-      const request = evtRequest(container);
       // Evaluation always uses the prepared Klant 34 fixture.
       const evaluationRequest = evaluate
         ? Object.assign({}, request, { household: 'Klant 34' })
@@ -3833,7 +3846,7 @@ function mountEventDetection(container) {
         container.querySelector('#evt-metrics').innerHTML = result.metrics.length ? result.metrics.map((metric) => '<div class="evt-metric"><strong>' + escapeHtml(evtLabel(metric.event_type)) + '</strong><span>Precision: ' + evtPercent(metric.precision) + ' &middot; Recall: ' + evtPercent(metric.recall) + ' &middot; F1: ' + evtPercent(metric.f1) + '</span><span>Detected: ' + metric.detected + ' &middot; Synthetic expected: ' + metric.ground_truth + ' &middot; Matched: ' + metric.matched + '</span></div>').join('') : '<p class="evt-muted">No expected or detected events in this test case.</p>';
         container.querySelector('#evt-quality').innerHTML = result.data_quality.length ? '<p><strong>Data quality findings: ' + result.data_quality.length + '</strong></p><ul>' + result.data_quality.map((issue) => '<li>' + escapeHtml(issue.date.slice(0, 10) + ': ' + issue.status + ' - ' + issue.details) + '</li>').join('') + '</ul>' : '<p class="evt-muted">No missing or partial readings in this scenario.</p>';
       } else {
-        events = result; selectedId = null; draw(); const qualityCount = points.filter((point) => point.quality_flag !== 'ok').length; setStatus(events.length ? events.length + ' patterns found across ' + points.length + ' daily readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : '') : 'No unusual patterns found across ' + points.length + ' daily readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : ''));
+        events = result; selectedId = null; draw(); const qualityCount = points.filter((point) => point.quality_flag !== 'ok').length; setStatus(events.length ? events.length + ' patterns found across ' + points.length + ' readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : '') : 'No unusual patterns found across ' + points.length + ' readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : ''));
       }
     } catch (error) { setStatus('Backend offline or unavailable: ' + error.message, true); }
   };
