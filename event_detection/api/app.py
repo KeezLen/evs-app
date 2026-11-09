@@ -1,5 +1,6 @@
 """Standalone HTTP API for event detection."""
 
+from collections import Counter
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
@@ -29,6 +30,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _get_detector(module: str, method: str):
+    """Resolve one detector from the public module/method pair."""
+    if module == "nilm":
+        return detector_registry.get(method)
+    return _ANOMALY_DETECTORS[method]
 
 
 @app.get("/")
@@ -70,17 +78,77 @@ def detect(request: DetectRequest):
         points = get_series(request.dataset, request.household, request.range_start, request.range_end)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    if request.module == "nilm":
-        try:
-            detector = detector_registry.get(request.method)
-        except KeyError as error:
-            raise HTTPException(status_code=400, detail="Unknown NILM method") from error
-    else:
-        try:
-            detector = _ANOMALY_DETECTORS[request.method]
-        except KeyError as error:
-            raise HTTPException(status_code=400, detail="Unknown anomaly method") from error
+    try:
+        detector = _get_detector(request.module, request.method)
+    except KeyError as error:
+        detail = "Unknown NILM method" if request.module == "nilm" else "Unknown anomaly method"
+        raise HTTPException(status_code=400, detail=detail) from error
     return detector.detect(points)
+
+
+@app.get("/event-summary")
+def event_summary(
+    dataset: str,
+    household: str,
+    module: str = "anomaly",
+    method: str = "isolation_forest",
+    range_start: datetime | None = None,
+    range_end: datetime | None = None,
+):
+    """Return detector results together with compact data-quality statistics."""
+    try:
+        points = get_series(dataset, household, range_start, range_end)
+        detector = _get_detector(module, method)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except KeyError as error:
+        detail = "Unknown NILM method" if module == "nilm" else "Unknown anomaly method"
+        raise HTTPException(status_code=400, detail=detail) from error
+
+    events = detector.detect(points)
+    event_counts = Counter(event.type for event in events)
+    quality_counts = Counter(point.quality_flag for point in points)
+    duration_minutes = sum(
+        int((event.end - event.start).total_seconds() / 60)
+        for event in events
+    )
+    return {
+        "dataset": dataset,
+        "household": household,
+        "module": module,
+        "method": method,
+        "range_start": range_start,
+        "range_end": range_end,
+        "total_points": len(points),
+        "valid_points": quality_counts.get("ok", 0),
+        "partial_points": quality_counts.get("partial", 0),
+        "missing_points": quality_counts.get("missing", 0),
+        "event_count": len(events),
+        "events_by_type": dict(sorted(event_counts.items())),
+        "anomalous_duration_minutes": duration_minutes,
+        "events": events,
+    }
+
+
+@app.get("/series-range")
+def series_range(dataset: str, household: str):
+    """Return the recorded date bounds for one dataset and household."""
+    try:
+        points = get_series(dataset, household)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if not points:
+        raise HTTPException(status_code=404, detail="No readings found for this household")
+    return {
+        "dataset": dataset,
+        "household": household,
+        "start": points[0].timestamp,
+        "end": points[-1].timestamp,
+        "start_date": points[0].timestamp.date(),
+        "end_date": points[-1].timestamp.date(),
+        "resolution_minutes": points[0].interval_minutes,
+        "point_count": len(points),
+    }
 
 
 @app.post("/evaluate", response_model=EvaluationResponse)
@@ -92,10 +160,7 @@ def evaluate(request: EvaluationRequest):
     fixture_household = "Klant 34"
     try:
         points, ground_truth, quality = load_scenario(request.scenario, fixture_household)
-        if request.module == "nilm":
-            detector = detector_registry.get(request.method)
-        else:
-            detector = _ANOMALY_DETECTORS[request.method]
+        detector = _get_detector(request.module, request.method)
     except (FileNotFoundError, KeyError, ValueError) as error:
         detail = "Unknown NILM method" if request.module == "nilm" else "Unknown anomaly method"
         raise HTTPException(status_code=400, detail=detail) from error

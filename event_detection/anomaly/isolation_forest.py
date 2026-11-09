@@ -59,7 +59,7 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
         predictions = model.fit_predict(features)
         decisions = model.decision_function(features)
         baseline = float(np.median([getattr(point, value_attribute) for point in points]))
-        return [
+        events = [
             self._event(
                 point,
                 signal_name,
@@ -73,6 +73,43 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
             )
             if prediction == -1
         ]
+        return self._aggregate_events(events)
+
+    @staticmethod
+    def _aggregate_events(events: list[Event]) -> list[Event]:
+        """Merge consecutive anomalous intervals into readable event windows."""
+        if not events:
+            return []
+        aggregated: list[Event] = []
+        current = [events[0]]
+        for event in events[1:]:
+            previous = current[-1]
+            if event.type == previous.type and event.start == previous.end:
+                current.append(event)
+            else:
+                aggregated.append(IsolationForestAnomalyDetector._merge_events(current))
+                current = [event]
+        aggregated.append(IsolationForestAnomalyDetector._merge_events(current))
+        return aggregated
+
+    @staticmethod
+    def _merge_events(events: list[Event]) -> Event:
+        """Build one event window from adjacent interval-level findings."""
+        first = events[0]
+        last = events[-1]
+        observed_values = [float(event.details["observed"]) for event in events]
+        return first.model_copy(update={
+            "id": f"{first.type}:{first.start.isoformat()}",
+            "end": last.end,
+            "magnitude": round(max(event.magnitude for event in events), 3),
+            "confidence": round(max(event.confidence for event in events), 3),
+            "details": {
+                **first.details,
+                "observed": round(max(observed_values), 3),
+                "interval_count": len(events),
+                "duration_minutes": int((last.end - first.start).total_seconds() / 60),
+            },
+        })
 
     @staticmethod
     def _features(points: Sequence[SeriesPoint], value_attribute: str) -> np.ndarray:

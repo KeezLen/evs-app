@@ -34,3 +34,35 @@ def test_evaluation_supports_isolation_forest():
     body = response.json()
     assert "isolation_forest" in body["source"]
     assert "unusual_gas" in {metric["event_type"] for metric in body["metrics"]}
+
+
+def test_event_summary_returns_quality_and_event_statistics():
+    response = TestClient(app).get(
+        "/event-summary",
+        params={
+            "dataset": "zonnedael",
+            "household": "Klant 34",
+            "module": "anomaly",
+            "method": "isolation_forest",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_points"] == 365
+    assert body["valid_points"] == 364
+    assert body["event_count"] == len(body["events"])
+    assert "events_by_type" in body
+
+
+def test_series_range_returns_household_dataset_bounds():
+    response = TestClient(app).get(
+        "/series-range",
+        params={"dataset": "zonnedael_15min_electricity", "household": "Klant 34"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["start_date"] == "2013-01-01"
+    assert body["end_date"] == "2013-12-31"
+    assert body["resolution_minutes"] == 15

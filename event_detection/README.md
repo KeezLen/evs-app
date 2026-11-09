@@ -25,6 +25,13 @@ the activation script, use the virtual environment directly instead:
 The dashboard uses `http://127.0.0.1:8000` by default. Override it before
 opening the HTML with `window.EVS_EVENT_API_BASE_URL`.
 
+For detector development, open `event_detection.html` after starting the API.
+It is a separate analyst view for full-resolution data: the detector processes
+all selected readings, while the chart uses spike-preserving downsampling and
+the table shows merged event windows. It defaults to the 15-minute electricity
+dataset and includes quality counts, event duration, detector selection, and
+date filtering.
+
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose
 a date range, and click **Run detection**. The tab loads the selected series
@@ -40,6 +47,11 @@ visible as breaks in the chart.
   `zonnedael_15min_electricity` (quarter-hour electricity only).
 - `POST /detect` accepts `dataset`, `household`, `range_start`, `range_end`,
   `module` (`nilm` or `anomaly`) and `method`.
+- `GET /event-summary` accepts the same dataset, household, range, module, and
+  method parameters and returns quality counts, event totals, durations, and
+  event windows for the analyst view.
+- `GET /series-range?dataset=...&household=...` returns the recorded start and
+  end dates for the selected household and dataset.
 - `POST /evaluate` uses the same request plus `tolerance_minutes` and a
   `scenario`.
 
@@ -54,9 +66,9 @@ baseline. Gas detection requires at least 14 valid observations so short date
 ranges are not treated as a reliable household profile. Partial and missing
 points are ignored, not treated as zero use.
 `/evaluate` accepts `scenario` (`normal`, `high_use`, `missing`, or
-`incomplete`) and evaluates the rules against the transparent Klant 34
-fixtures. Synthetic event rows are ground truth for evaluation only; they are
-not appliance labels. Missing, partial, and absent dates are returned
+`incomplete`) and evaluates the selected detector against the transparent Klant
+34 fixtures. Synthetic event rows are ground truth for evaluation only; they
+are not appliance labels. Missing, partial, and absent dates are returned
 separately as `data_quality`.
 
 `/detect` with `module: "anomaly"` currently supports `method:
@@ -65,6 +77,9 @@ electricity and gas observations, using calendar and available weather context.
 At least 30 valid observations are required per signal. The detector reports
 generic `unusual_electricity` and `unusual_gas` events; it does not identify an
 appliance or causal explanation. Partial and missing observations are excluded.
+Adjacent Isolation Forest intervals are merged into one event window. The
+analyst summary reports the full event count and duration; its table limits the
+visible rows for responsiveness.
 
 ## Adding data
 

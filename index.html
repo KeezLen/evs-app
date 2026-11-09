@@ -389,6 +389,8 @@ button.stage:focus-visible { outline: 3px solid var(--green-600); outline-offset
   border-radius: 8px; background: var(--surface); color: var(--ink); }
 .evt-actions { display: flex; gap: 8px; margin-top: 10px; }
 .evt-actions .btn { min-height: 42px; font-size: 16px; }
+.evt-actions .evt-analyst-link { flex: 0 0 auto; display: inline-flex; align-items: center;
+  justify-content: center; text-decoration: none; }
 .evt-status { padding: 10px 12px; border-radius: 8px; background: var(--green-100); font-size: 15px; }
 .evt-status.warn { background: #fdf3d7; border-left: 4px solid var(--accent); }
 .evt-chart { overflow-x: auto; }
@@ -3722,7 +3724,7 @@ function renderEventDetection() {
     + '<label class="evt-control">From<input id="evt-from" type="datetime-local"></label>'
     + '<label class="evt-control">To<input id="evt-to" type="datetime-local"></label>'
     + '<label class="evt-control">Method<select id="evt-method"><option value="rules">Documented baseline rules</option><option value="isolation_forest">Isolation Forest anomaly detection</option></select></label>'
-    + '</div><div class="evt-actions"><button class="btn" id="evt-run">Run detection</button></div></section>'
+    + '</div><div class="evt-actions"><button class="btn" id="evt-run">Run detection</button><a class="btn ghost evt-analyst-link" href="event_detection.html" target="_blank" rel="noopener">Analyst view &rarr;</a></div></section>'
     + '<p id="evt-status" class="evt-status">Ready. Backend: ' + escapeHtml(EVT_API_BASE) + '</p>'
     + '<section class="card"><h3>Electricity series</h3><p class="evt-muted">Missing and partial readings appear as gaps and are excluded from detection. Gas events are marked on this shared timeline.</p><div id="evt-chart" class="evt-chart"><p class="evt-muted">No series loaded.</p></div><div id="evt-legend" class="evt-legend"></div></section>'
     + '<section class="card"><h3>Detected patterns</h3><div class="evt-table-wrap"><table class="evt-table"><thead><tr>'

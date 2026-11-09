@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVS event detection analyst view</title>
+<style>
+:root {
+  --ink: #17231b;
+  --muted: #627268;
+  --line: #d7e1da;
+  --surface: #ffffff;
+  --canvas: #edf3ee;
+  --green: #2e5d3a;
+  --green-dark: #1f4128;
+  --yellow: #f2b705;
+  --red: #b3261e;
+  --blue: #2563eb;
+  --radius: 10px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: #dfe8e1;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: linear-gradient(135deg, #dfe8e1, #f8faf8 55%, #e8eee9); }
+main { width: min(1440px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 48px; }
+header { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 22px; }
+h1 { margin: 0; color: var(--green-dark); font-size: clamp(26px, 4vw, 42px); line-height: 1.05; }
+.lead { max-width: 720px; margin: 10px 0 0; color: var(--muted); font-size: 15px; }
+.status { padding: 10px 14px; border-left: 4px solid var(--yellow); background: #fff8df; color: #5e4d14; font-size: 14px; }
+.panel { background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 26px rgba(31,65,40,.08); }
+.controls { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 12px; padding: 16px; }
+label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; font-weight: 600; }
+select, input, button { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #aebfb2; border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; }
+button { border-color: var(--green); background: var(--green); color: white; font-weight: 700; cursor: pointer; }
+button.secondary { background: white; color: var(--green-dark); }
+button:hover { filter: brightness(.96); }
+.actions { display: flex; align-items: end; gap: 8px; }
+.range-info { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 13px; }
+.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin: 16px 0; }
+.stat { padding: 14px; min-height: 92px; }
+.stat dt { color: var(--muted); font-size: 13px; }
+.stat dd { margin: 6px 0 0; color: var(--green-dark); font-size: 25px; font-weight: 750; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px 18px 0; }
+h2 { margin: 0; color: var(--green-dark); font-size: 20px; }
+.section-note { margin: 0; color: var(--muted); font-size: 13px; }
+.chart-panel { padding-bottom: 16px; margin-bottom: 16px; }
+.chart-wrap { overflow-x: auto; padding: 12px 18px 0; }
+svg { display: block; width: 100%; min-width: 700px; height: 350px; background: var(--canvas); border-radius: 7px; }
+.axis { stroke: #9fb3a4; stroke-width: 1; }
+.grid { stroke: #d7e1da; stroke-width: 1; }
+.axis-text { fill: var(--muted); font-size: 12px; }
+.axis-title { fill: var(--muted); font-size: 13px; font-weight: 600; }
+.series { fill: none; stroke: var(--green-dark); stroke-width: 1.5; }
+.event-line { stroke: var(--red); stroke-width: 2; opacity: .55; }
+.event-line.gas { stroke: var(--blue); }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; padding: 10px 18px 0; color: var(--muted); font-size: 13px; }
+.legend span { display: inline-flex; gap: 5px; align-items: center; }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--green-dark); }
+.swatch.electricity { background: var(--red); }
+.swatch.gas { background: var(--blue); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 11px 16px; border-top: 1px solid var(--line); text-align: left; white-space: nowrap; }
+th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+tr.event-row { cursor: pointer; }
+tr.event-row:hover, tr.event-row.selected { background: #fff8df; }
+.badge { display: inline-block; padding: 3px 7px; border-radius: 999px; background: #e7f0e9; color: var(--green-dark); font-size: 12px; font-weight: 700; }
+.badge.gas { background: #e4edff; color: var(--blue); }
+.empty { padding: 24px 16px; color: var(--muted); }
+.error { color: var(--red); }
+@media (max-width: 980px) {
+  .controls { grid-template-columns: repeat(3, 1fr); }
+  .stats { grid-template-columns: repeat(3, 1fr); }
+  header { display: block; }
+  .status { margin-top: 14px; }
+}
+@media (max-width: 600px) {
+  main { width: min(100% - 20px, 1440px); padding-top: 18px; }
+  .controls, .stats { grid-template-columns: 1fr 1fr; }
+  .actions { grid-column: span 2; }
+  .stat dd { font-size: 21px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Event detection analyst view</h1>
+      <p class="lead">Inspect detector output across a household series. The detector uses all selected readings; the chart is downsampled only for readability.</p>
+    </div>
+    <div id="status" class="status">Ready</div>
+  </header>
+
+  <section class="panel controls" aria-label="Detection controls">
+    <label>Dataset<select id="dataset"></select></label>
+    <label>Household<select id="household"></select></label>
+    <label>Module<select id="module"><option value="anomaly">Anomaly</option><option value="nilm">NILM</option></select></label>
+    <label>Method<select id="method"><option value="isolation_forest">Isolation Forest</option><option value="rules">Rules</option></select></label>
+    <label>From<input id="from" type="date"></label>
+    <label>To<input id="to" type="date"></label>
+    <label>Quick range<select id="range-preset"><option value="full">Full dataset</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label>
+    <div class="actions">
+      <button id="run">Load analysis</button>
+    </div>
+    <p id="range-info" class="range-info">Loading recorded date range...</p>
+  </section>
+
+  <section class="stats" aria-label="Summary statistics">
+    <dl class="panel stat"><dt>Readings</dt><dd id="total">-</dd></dl>
+    <dl class="panel stat"><dt>Valid</dt><dd id="valid">-</dd></dl>
+    <dl class="panel stat"><dt>Incomplete</dt><dd id="incomplete">-</dd></dl>
+    <dl class="panel stat"><dt>Events</dt><dd id="event-count">-</dd></dl>
+    <dl class="panel stat"><dt>Event duration</dt><dd id="duration">-</dd></dl>
+    <dl class="panel stat"><dt>Event types</dt><dd id="types">-</dd></dl>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="section-head"><h2>Consumption overview</h2><p class="section-note">Average use, normal variation, and event markers over time.</p></div>
+    <div class="chart-wrap"><svg id="chart" viewBox="0 0 1200 350" role="img" aria-label="Consumption overview"></svg></div>
+    <div class="legend"><span><i class="swatch"></i>Electricity series</span><span><i class="swatch electricity"></i>Electricity event</span><span><i class="swatch gas"></i>Gas event</span></div>
+  </section>
+
+  <section class="panel">
+    <div class="section-head"><h2>Event windows</h2><p id="event-note" class="section-note">Adjacent anomalous intervals are merged.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>Type</th><th>Start</th><th>End</th><th>Duration</th><th>Magnitude</th><th>Confidence</th></tr></thead><tbody id="events"><tr><td colspan="6" class="empty">Run an analysis to see event windows.</td></tr></tbody></table></div>
+  </section>
+</main>
+<script>
+const API = window.EVS_EVENT_API_BASE_URL || 'http://127.0.0.1:8000';
+const $ = (id) => document.getElementById(id);
+let datasets = [];
+let currentEvents = [];
+let rangeBounds = null;
+
+function setStatus(text, error = false) {
+  $('status').textContent = text;
+  $('status').classList.toggle('error', error);
+}
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function formatDate(value) { return value ? new Date(value).toLocaleString() : '-'; }
+function formatDuration(minutes) {
+  if (minutes < 60) return minutes + ' min';
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours + 'h' + (remainder ? ' ' + remainder + 'm' : '');
+}
+function selectedRequest() {
+  const params = new URLSearchParams({
+    dataset: $('dataset').value,
+    household: $('household').value,
+    module: $('module').value,
+    method: $('method').value,
+  });
+  if ($('from').value) params.set('range_start', $('from').value + 'T00:00:00');
+  if ($('to').value) params.set('range_end', $('to').value + 'T23:59:59');
+  return params;
+}
+function updateMethods() {
+  const module = $('module').value;
+  $('method').innerHTML = module === 'anomaly'
+    ? '<option value="isolation_forest">Isolation Forest</option>'
+    : '<option value="rules">Rules</option>';
+}
+async function loadRange() {
+  const params = new URLSearchParams({ dataset: $('dataset').value, household: $('household').value });
+  const response = await fetch(API + '/series-range?' + params.toString());
+  if (!response.ok) throw new Error('Date range HTTP ' + response.status);
+  rangeBounds = await response.json();
+  $('from').min = rangeBounds.start_date;
+  $('from').max = rangeBounds.end_date;
+  $('to').min = rangeBounds.start_date;
+  $('to').max = rangeBounds.end_date;
+  $('from').value = rangeBounds.start_date;
+  $('to').value = rangeBounds.end_date;
+  $('range-preset').value = 'full';
+  $('range-info').textContent = 'Recorded dates: ' + rangeBounds.start_date + ' to ' + rangeBounds.end_date + ' (' + rangeBounds.point_count + ' readings at ' + rangeBounds.resolution_minutes + ' minutes).';
+}
+async function loadHouseholds() {
+  const dataset = datasets.find((item) => item.id === $('dataset').value);
+  $('household').innerHTML = (dataset?.households || []).map((name) =>
+    '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>').join('');
+  if ((dataset?.households || []).includes('Klant 34')) $('household').value = 'Klant 34';
+  await loadRange();
+}
+function applyQuickRange() {
+  if (!rangeBounds) return;
+  const preset = $('range-preset').value;
+  const end = new Date(rangeBounds.end_date + 'T00:00:00Z');
+  const start = preset === 'full'
+    ? new Date(rangeBounds.start_date + 'T00:00:00Z')
+    : new Date(end.getTime() - (Number(preset) - 1) * 86400000);
+  const startDate = start.toISOString().slice(0, 10);
+  $('from').value = startDate < rangeBounds.start_date ? rangeBounds.start_date : startDate;
+  $('to').value = rangeBounds.end_date;
+}
+function downsample(points, limit = 900) {
+  const valid = points.filter((point) => Number.isFinite(point.electricity_kwh));
+  if (!valid.length) return [];
+  const bucketSize = Math.max(1, valid.length / limit);
+  const output = [];
+  for (let start = 0; start < valid.length; start += bucketSize) {
+    const bucket = valid.slice(Math.floor(start), Math.ceil(start + bucketSize));
+    if (!bucket.length) continue;
+    const values = bucket.map((point) => point.electricity_kwh);
+    output.push({
+      timestamp: bucket[Math.floor(bucket.length / 2)].timestamp,
+      minimum: Math.min(...values),
+      maximum: Math.max(...values),
+      average: values.reduce((sum, value) => sum + value, 0) / values.length,
+    });
+  }
+  return output;
+}
+function drawChart(points, events) {
+  const svg = $('chart');
+  const visible = downsample(points);
+  if (!visible.length) { svg.innerHTML = '<text x="24" y="40" fill="#627268">No valid electricity readings in this range.</text>'; return; }
+  const width = 1200; const height = 350; const pad = { top: 20, right: 24, bottom: 86, left: 64 };
+  const allValues = visible.flatMap((point) => [point.minimum, point.maximum]);
+  const min = Math.min(...allValues, 0); const max = Math.max(...allValues, 1);
+  const first = new Date(points[0].timestamp).getTime();
+  const last = new Date(points.at(-1).timestamp).getTime();
+  const chartWidth = width - pad.left - pad.right;
+  const chartHeight = height - pad.top - pad.bottom;
+  const x = (date) => pad.left + ((new Date(date).getTime() - first) / Math.max(1, last - first)) * chartWidth;
+  const y = (value) => height - pad.bottom - ((value - min) / Math.max(1, max - min)) * chartHeight;
+  const averagePath = visible.map((point, index) => (index ? 'L' : 'M') + x(point.timestamp).toFixed(1) + ' ' + y(point.average).toFixed(1)).join(' ');
+  const upperPath = visible.map((point, index) => (index ? 'L' : 'M') + x(point.timestamp).toFixed(1) + ' ' + y(point.maximum).toFixed(1)).join(' ');
+  const lowerPath = visible.slice().reverse().map((point) => 'L' + x(point.timestamp).toFixed(1) + ' ' + y(point.minimum).toFixed(1)).join(' ');
+  const eventBandTop = height - pad.bottom + 8;
+  const yTicks = Array.from({ length: 5 }, (_, index) => min + ((max - min) * index) / 4);
+  const yGrid = yTicks.map((value) => '<line class="grid" x1="' + pad.left + '" y1="' + y(value).toFixed(1) + '" x2="' + (width - pad.right) + '" y2="' + y(value).toFixed(1) + '"/><text class="axis-text" x="' + (pad.left - 8) + '" y="' + (y(value) + 4).toFixed(1) + '" text-anchor="end">' + value.toFixed(2) + '</text>').join('');
+  const spanDays = (last - first) / 86400000;
+  const dateOptions = spanDays > 120 ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' };
+  const xTicks = Array.from({ length: 6 }, (_, index) => {
+    const time = first + ((last - first) * index) / 5;
+    const date = new Date(time);
+    return '<line class="axis" x1="' + x(date).toFixed(1) + '" y1="' + (height - pad.bottom) + '" x2="' + x(date).toFixed(1) + '" y2="' + (height - pad.bottom + 5) + '"/><text class="axis-text" x="' + x(date).toFixed(1) + '" y="' + (height - pad.bottom + 43) + '" text-anchor="middle">' + date.toLocaleDateString(undefined, dateOptions) + '</text>';
+  }).join('');
+  const lines = events.map((event) => '<line class="event-line ' + (event.type.includes('gas') ? 'gas' : '') + '" x1="' + x(event.start).toFixed(1) + '" y1="' + eventBandTop + '" x2="' + x(event.start).toFixed(1) + '" y2="' + (eventBandTop + 20) + '"><title>' + escapeHtml(event.type + ' ' + formatDate(event.start)) + '</title></line>').join('');
+  const unit = points[0].interval_minutes >= 1440 ? 'kWh per day' : 'kWh per ' + points[0].interval_minutes + ' min';
+  svg.innerHTML = yGrid + '<line class="axis" x1="' + pad.left + '" y1="' + pad.top + '" x2="' + pad.left + '" y2="' + (height - pad.bottom) + '"/><line class="axis" x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '"/><path d="' + upperPath + ' ' + lowerPath + ' Z" fill="#2E5D3A" opacity=".14"/><path class="series" d="' + averagePath + '"/><line class="axis" x1="' + pad.left + '" y1="' + eventBandTop + '" x2="' + (width - pad.right) + '" y2="' + eventBandTop + '"/>' + lines + xTicks + '<text class="axis-title" x="' + (pad.left + chartWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">Date</text><text class="axis-title" x="16" y="' + (pad.top + chartHeight / 2) + '" text-anchor="middle" transform="rotate(-90 16 ' + (pad.top + chartHeight / 2) + ')">' + unit + '</text>';
+}
+function renderEvents(events) {
+  currentEvents = events;
+  const visible = events.slice(0, 200);
+  $('event-note').textContent = events.length > visible.length
+    ? 'Showing the first ' + visible.length + ' of ' + events.length + ' event windows.'
+    : 'Adjacent anomalous intervals are merged.';
+  $('events').innerHTML = visible.length ? visible.map((event, index) => '<tr class="event-row" data-index="' + index + '"><td><span class="badge ' + (event.type.includes('gas') ? 'gas' : '') + '">' + escapeHtml(event.type) + '</span></td><td>' + formatDate(event.start) + '</td><td>' + formatDate(event.end) + '</td><td>' + formatDuration(event.details.duration_minutes || 0) + '</td><td>' + event.magnitude + '</td><td>' + Math.round(event.confidence * 100) + '%</td></tr>').join('') : '<tr><td colspan="6" class="empty">No events detected in this range.</td></tr>';
+}
+async function runAnalysis() {
+  setStatus('Loading series and detector summary...');
+  const params = selectedRequest();
+  try {
+    const [seriesResponse, summaryResponse] = await Promise.all([
+      fetch(API + '/series?' + params.toString()),
+      fetch(API + '/event-summary?' + params.toString()),
+    ]);
+    if (!seriesResponse.ok || !summaryResponse.ok) throw new Error('Backend returned an error');
+    const [points, summary] = await Promise.all([seriesResponse.json(), summaryResponse.json()]);
+    $('total').textContent = summary.total_points;
+    $('valid').textContent = summary.valid_points;
+    $('incomplete').textContent = summary.partial_points + summary.missing_points;
+    $('event-count').textContent = summary.event_count;
+    $('duration').textContent = formatDuration(summary.anomalous_duration_minutes);
+    $('types').textContent = Object.keys(summary.events_by_type).length;
+    drawChart(points, summary.events);
+    renderEvents(summary.events);
+    setStatus('Loaded ' + summary.total_points + ' readings for ' + summary.household + '.');
+  } catch (error) {
+    setStatus('Backend unavailable: ' + error.message, true);
+  }
+}
+async function boot() {
+  try {
+    const response = await fetch(API + '/datasets');
+    if (!response.ok) throw new Error('Datasets HTTP ' + response.status);
+    datasets = await response.json();
+    $('dataset').innerHTML = datasets.filter((item) => item.available).map((item) => '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.name) + ' (' + item.resolution_minutes + ' min)</option>').join('');
+    $('dataset').value = datasets.some((item) => item.id === 'zonnedael_15min_electricity') ? 'zonnedael_15min_electricity' : $('dataset').value;
+    await loadHouseholds();
+    await runAnalysis();
+  } catch (error) { setStatus('Backend unavailable: ' + error.message, true); }
+}
+$('module').addEventListener('change', updateMethods);
+$('dataset').addEventListener('change', () => loadHouseholds().catch((error) => setStatus('Could not load date range: ' + error.message, true)));
+$('household').addEventListener('change', () => loadRange().catch((error) => setStatus('Could not load date range: ' + error.message, true)));
+$('range-preset').addEventListener('change', applyQuickRange);
+$('run').addEventListener('click', runAnalysis);
+boot();
+</script>
+</body>
+</html>
