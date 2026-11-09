@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from event_detection.config import settings
 from event_detection.data import available_datasets, get_series
-from event_detection.anomaly.placeholder import PlaceholderAnomalyDetector
+from event_detection.anomaly import IsolationForestAnomalyDetector
 from event_detection.evaluation.matching import match_events
 from event_detection.evaluation.scenarios import load_scenario
 from event_detection.nilm import detector_registry
@@ -19,6 +19,9 @@ from event_detection.schemas import (
 )
 
 app = FastAPI(title=settings.api_title)
+_ANOMALY_DETECTORS = {
+    IsolationForestAnomalyDetector.name: IsolationForestAnomalyDetector(),
+}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -73,24 +76,29 @@ def detect(request: DetectRequest):
         except KeyError as error:
             raise HTTPException(status_code=400, detail="Unknown NILM method") from error
     else:
-        detector = PlaceholderAnomalyDetector()
+        try:
+            detector = _ANOMALY_DETECTORS[request.method]
+        except KeyError as error:
+            raise HTTPException(status_code=400, detail="Unknown anomaly method") from error
     return detector.detect(points)
 
 
 @app.post("/evaluate", response_model=EvaluationResponse)
 def evaluate(request: EvaluationRequest):
-    """Compare the rules with one prepared synthetic scenario."""
+    """Compare the selected detector with one prepared synthetic scenario."""
     if request.dataset != "zonnedael":
         raise HTTPException(status_code=400, detail="Scenario evaluation is only available for Zonnedael")
-    if request.module != "nilm":
-        raise HTTPException(status_code=400, detail="Scenario evaluation requires the NILM rules module")
     # Scenarios currently contain prepared data for this home only.
     fixture_household = "Klant 34"
     try:
         points, ground_truth, quality = load_scenario(request.scenario, fixture_household)
-        detector = detector_registry.get(request.method)
+        if request.module == "nilm":
+            detector = detector_registry.get(request.method)
+        else:
+            detector = _ANOMALY_DETECTORS[request.method]
     except (FileNotFoundError, KeyError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        detail = "Unknown NILM method" if request.module == "nilm" else "Unknown anomaly method"
+        raise HTTPException(status_code=400, detail=detail) from error
     # Apply the requested date range to both detections and truth.
     points = [
         point for point in points
@@ -102,6 +110,16 @@ def evaluate(request: EvaluationRequest):
         if (request.range_start is None or event.start >= request.range_start)
         and (request.range_end is None or event.start <= request.range_end)
     ]
+    if request.module == "anomaly":
+        # Scenario fixtures use the rules vocabulary; map it for anomaly metrics.
+        event_type_map = {
+            "high_electricity": "unusual_electricity",
+            "high_gas": "unusual_gas",
+        }
+        ground_truth = [
+            event.model_copy(update={"type": event_type_map.get(event.type, event.type)})
+            for event in ground_truth
+        ]
     detected = detector.detect(points)
     event_types = sorted({event.type for event in detected} | {event.type for event in ground_truth})
     metrics = []
@@ -125,7 +143,10 @@ def evaluate(request: EvaluationRequest):
     return EvaluationResponse(
         metrics=metrics,
         tolerance_minutes=request.tolerance_minutes,
-        source=f"synthetic ground truth from Zonnedael scenario '{request.scenario}' for {fixture_household}",
+        source=(
+            f"synthetic ground truth from Zonnedael scenario '{request.scenario}' "
+            f"for {fixture_household} using '{request.method}'"
+        ),
         notes=[
             "Synthetic events are evaluation fixtures, not appliance labels.",
             "Partial, missing, and absent dates are reported as data quality and excluded from detection.",

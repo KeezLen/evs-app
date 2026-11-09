@@ -2,7 +2,8 @@
 
 This is a standalone FastAPI boundary for the Energieverdienspel dashboard.
 Zonnedael is available as validated daily, hourly, and 15-minute electricity
-data. GridFlex remains unavailable; the initial rules detector is implemented.
+data. GridFlex remains unavailable; the initial rules and Isolation Forest
+anomaly detectors are implemented.
 
 ## Run
 
@@ -57,6 +58,13 @@ points are ignored, not treated as zero use.
 fixtures. Synthetic event rows are ground truth for evaluation only; they are
 not appliance labels. Missing, partial, and absent dates are returned
 separately as `data_quality`.
+
+`/detect` with `module: "anomaly"` currently supports `method:
+"isolation_forest"`. It fits separate household-specific models for valid
+electricity and gas observations, using calendar and available weather context.
+At least 30 valid observations are required per signal. The detector reports
+generic `unusual_electricity` and `unusual_gas` events; it does not identify an
+appliance or causal explanation. Partial and missing observations are excluded.
 
 ## Adding data
 

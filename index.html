@@ -3708,24 +3708,26 @@ const EVT_API_BASE = window.EVS_EVENT_API_BASE_URL || 'http://127.0.0.1:8000';
 const EVT_COLORS = Object.freeze({
   high_electricity: '#F2B705',
   high_gas: '#B3261E',
+  unusual_electricity: '#2E5D3A',
+  unusual_gas: '#7A5433',
 });
 
 function renderEventDetection() {
   return '<section id="evt-detection" data-view="event-detection">'
     + '<h2>Event detection</h2>'
-    + '<p class="note">The initial rules compare electricity with a household baseline and gas with a temperature-aware baseline. They describe unusual consumption patterns without attributing them to an appliance.</p>'
+    + '<p class="note">Rules and Isolation Forest describe unusual household consumption without attributing it to a specific appliance.</p>'
     + '<section class="card"><h3>Detection controls</h3><div class="evt-controls">'
     + '<label class="evt-control">Dataset<select id="evt-dataset"><option value="zonnedael">Loading datasets...</option></select></label>'
     + '<label class="evt-control">Household<select id="evt-household"><option value="">Loading households...</option></select></label>'
     + '<label class="evt-control">From<input id="evt-from" type="datetime-local"></label>'
     + '<label class="evt-control">To<input id="evt-to" type="datetime-local"></label>'
-    + '<label class="evt-control">Method<select id="evt-module"><option value="nilm">Documented baseline rules</option><option value="anomaly" disabled>Anomaly detection (not implemented)</option></select></label>'
-    + '</div><div class="evt-actions"><button class="btn" id="evt-run">Run rules</button></div></section>'
+    + '<label class="evt-control">Method<select id="evt-method"><option value="rules">Documented baseline rules</option><option value="isolation_forest">Isolation Forest anomaly detection</option></select></label>'
+    + '</div><div class="evt-actions"><button class="btn" id="evt-run">Run detection</button></div></section>'
     + '<p id="evt-status" class="evt-status">Ready. Backend: ' + escapeHtml(EVT_API_BASE) + '</p>'
     + '<section class="card"><h3>Electricity series</h3><p class="evt-muted">Missing and partial readings appear as gaps and are excluded from detection. Gas events are marked on this shared timeline.</p><div id="evt-chart" class="evt-chart"><p class="evt-muted">No series loaded.</p></div><div id="evt-legend" class="evt-legend"></div></section>'
     + '<section class="card"><h3>Detected patterns</h3><div class="evt-table-wrap"><table class="evt-table"><thead><tr>'
     + '<th><button data-evt-sort="type">Type</button></th><th><button data-evt-sort="start">Time</button></th><th><button data-evt-sort="magnitude">Size</button></th><th><button data-evt-sort="confidence">Confidence</button></th></tr></thead><tbody id="evt-events"><tr><td colspan="4" class="evt-muted">No events loaded.</td></tr></tbody></table></div></section>'
-    + '<section class="card"><h3>Test the detection rules</h3><p class="evt-evaluation-explainer"><strong>This is a developer check, not a household result.</strong><br>It runs the same rules on prepared examples where the expected synthetic changes are known. This helps us measure whether the rules find unusual use without confusing missing data for behaviour.</p><p class="evt-evaluation-meta"><strong>Fixture household:</strong> Klant 34 &middot; <strong>Scenarios:</strong> synthetic test files</p><div class="evt-controls"><label class="evt-control">Test case<select id="evt-scenario"><option value="high_use">High use: four injected gas increases</option><option value="normal">Normal use: no injected events</option><option value="missing">Missing data: gaps and partial readings</option><option value="incomplete">Short history: ten days only</option></select></label></div><button class="btn ghost evt-evaluate" id="evt-evaluate">Run test case for Klant 34</button><p id="evt-evaluation-source" class="evt-muted">No test case run yet.</p><div id="evt-metrics" class="evt-metric-grid"></div><div id="evt-quality" class="evt-quality"></div></section>'
+    + '<section class="card"><h3>Evaluate detector</h3><p class="evt-evaluation-explainer"><strong>This is a developer benchmark, not a household result.</strong><br>It runs the selected detector on prepared examples with synthetic ground truth. The scenarios help compare methods without treating missing data as behaviour. They are not verified appliance-level labels.</p><p class="evt-evaluation-meta"><strong>Fixture household:</strong> Klant 34 &middot; <strong>Scenarios:</strong> synthetic test files</p><div class="evt-controls"><label class="evt-control">Test case<select id="evt-scenario"><option value="high_use">High use: four injected gas increases</option><option value="normal">Normal use: no injected events</option><option value="missing">Missing data: gaps and partial readings</option><option value="incomplete">Short history: ten days only</option></select></label></div><button class="btn ghost evt-evaluate" id="evt-evaluate">Evaluate selected method</button><p id="evt-evaluation-source" class="evt-muted">No evaluation run yet.</p><div id="evt-metrics" class="evt-metric-grid"></div><div id="evt-quality" class="evt-quality"></div></section>'
     + '</section>';
 }
 
@@ -3734,7 +3736,12 @@ function evtDate(value) {
 }
 
 function evtLabel(type) {
-  return { high_electricity: 'High electricity use', high_gas: 'High gas use' }[type] || type;
+  return {
+    high_electricity: 'High electricity use',
+    high_gas: 'High gas use',
+    unusual_electricity: 'Unusual electricity use',
+    unusual_gas: 'Unusual gas use',
+  }[type] || type;
 }
 
 function evtPercent(value) {
@@ -3743,10 +3750,12 @@ function evtPercent(value) {
 
 function evtRequest(container) {
   const value = (id) => container.querySelector('#' + id).value;
+  const method = value('evt-method');
   return {
     dataset: value('evt-dataset'), household: value('evt-household'),
     range_start: value('evt-from') || null, range_end: value('evt-to') || null,
-    module: value('evt-module'), method: 'rules', scenario: value('evt-scenario'),
+    module: method === 'isolation_forest' ? 'anomaly' : 'nilm',
+    method, scenario: value('evt-scenario'),
   };
 }
 
