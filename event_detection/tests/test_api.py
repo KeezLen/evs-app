@@ -53,7 +53,9 @@ def test_event_summary_returns_quality_and_event_statistics():
     assert body["valid_points"] == 364
     assert body["event_count"] == len(body["events"])
     assert "events_by_type" in body
-    assert body["test_split"]["training_ratio"] == 0.7
+    assert body["test_split"]["training_ratio"] == (
+        body["test_split"]["training_points"] / body["valid_points"]
+    )
     assert body["test_split"]["training_points"] < body["total_points"]
 
 
@@ -68,3 +70,48 @@ def test_series_range_returns_household_dataset_bounds():
     assert body["start_date"] == "2013-01-01"
     assert body["end_date"] == "2013-12-31"
     assert body["resolution_minutes"] == 15
+
+
+def test_event_summary_rejects_unsupported_rnn_lookback():
+    response = TestClient(app).get(
+        "/event-summary",
+        params={
+            "dataset": "zonnedael_hourly",
+            "household": "Klant 34",
+            "module": "anomaly",
+            "method": "rnn",
+            "lookback_days": 2,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_rnn_evaluation_rejects_daily_only_scenarios():
+    response = TestClient(app).post(
+        "/evaluate",
+        json={
+            "dataset": "zonnedael",
+            "household": "Klant 34",
+            "module": "anomaly",
+            "method": "rnn",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "daily-only" in response.json()["detail"]
+
+
+def test_rnn_summary_rejects_daily_resolution():
+    response = TestClient(app).get(
+        "/event-summary",
+        params={
+            "dataset": "zonnedael",
+            "household": "Klant 34",
+            "module": "anomaly",
+            "method": "rnn",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "hourly and 15-minute" in response.json()["detail"]

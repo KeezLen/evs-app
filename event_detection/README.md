@@ -2,8 +2,8 @@
 
 This is a standalone FastAPI boundary for the Energieverdienspel dashboard.
 Zonnedael is available as validated daily, hourly, and 15-minute electricity
-data. GridFlex remains unavailable; the initial rules and Isolation Forest
-anomaly detectors are implemented.
+data. GridFlex remains unavailable; the rules, Isolation Forest, and RNN
+forecast anomaly detectors are implemented.
 
 ## Run
 
@@ -31,8 +31,8 @@ all selected readings, while the chart uses spike-preserving downsampling and
 the table shows merged event windows. It defaults to the 15-minute electricity
 dataset and includes quality counts, event duration, detector selection, and
 date filtering. The selected date range is the detection window; Isolation
-Forest automatically uses earlier available household readings as training
-history when enough data exists.
+Forest and RNN automatically use earlier available household readings as
+training history when enough data exists.
 
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose
@@ -48,10 +48,10 @@ visible as breaks in the chart.
   `zonnedael_hourly` (hourly electricity, gas, and temperature), and
   `zonnedael_15min_electricity` (quarter-hour electricity only).
 - `POST /detect` accepts `dataset`, `household`, `range_start`, `range_end`,
-  `module` (`nilm` or `anomaly`) and `method`.
+  `module` (`nilm` or `anomaly`), `method`, and optional `lookback_days` (1 or 7).
 - `GET /event-summary` accepts the same dataset, household, range, module, and
-  method parameters and returns quality counts, event totals, durations, and
-  event windows for the analyst view.
+  method parameters plus `lookback_days`, and returns quality counts, event
+  totals, durations, and event windows for the analyst view.
 - `GET /series-range?dataset=...&household=...` returns the recorded start and
   end dates for the selected household and dataset.
 - `POST /evaluate` uses the same request plus `tolerance_minutes` and a
@@ -73,19 +73,30 @@ points are ignored, not treated as zero use.
 are not appliance labels. Missing, partial, and absent dates are returned
 separately as `data_quality`.
 
-`/detect` with `module: "anomaly"` currently supports `method:
-"isolation_forest"`. It fits separate household-specific models for valid
+`/detect` with `module: "anomaly"` supports `method: "isolation_forest"` and
+`method: "rnn"`. Isolation Forest fits separate household-specific models for valid
 electricity and gas observations, using calendar and available weather context.
 At least 30 valid observations are required per signal. The detector reports
 generic `unusual_electricity` and `unusual_gas` events; it does not identify an
 appliance or causal explanation. Partial and missing observations are excluded.
-The current implementation trains on the first 70% of the selected history and
-scores the final 30%, with a provisional 1% contamination rate. These are
-explicitly tunable assumptions to revisit when better performance evidence or
-real event labels become available.
+For interactive detection, Isolation Forest trains on earlier available history
+and scores the selected detection window; it falls back to the provisional
+chronological 70/30 split when earlier history is insufficient. Its 1%
+contamination rate is an adjustable assumption.
 Adjacent Isolation Forest intervals are merged into one event window. The
 analyst summary reports the full event count and duration; its table limits the
 visible rows for responsiveness.
+
+The RNN method uses a per-household PyTorch LSTM to forecast the next hour:
+four quarter-hour readings for 15-minute electricity, or one reading for
+hourly electricity/gas. The analyst view offers 24-hour and 7-day input
+lookbacks, defaulting to 24 hours. Models are cached in memory by their training
+data and configuration. Separate high/low residual thresholds are calibrated
+from the held-out final 20% of training windows using the 99th percentile.
+Median +/- 3 MAD is a possible alternative: it is robust and compact, but less
+responsive to skewed residual tails. RNN is currently limited to 15-minute and
+hourly data; the prepared evaluation scenarios are daily and therefore do not
+support RNN evaluation yet.
 
 ## Adding data
 

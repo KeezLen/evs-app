@@ -2,13 +2,14 @@
 
 from collections import Counter
 from datetime import datetime
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from event_detection.config import settings
 from event_detection.data import available_datasets, get_series
-from event_detection.anomaly import IsolationForestAnomalyDetector
+from event_detection.anomaly import IsolationForestAnomalyDetector, RNNForecastDetector
 from event_detection.evaluation.matching import match_events
 from event_detection.evaluation.scenarios import load_scenario
 from event_detection.nilm import detector_registry
@@ -22,6 +23,7 @@ from event_detection.schemas import (
 app = FastAPI(title=settings.api_title)
 _ANOMALY_DETECTORS = {
     IsolationForestAnomalyDetector.name: IsolationForestAnomalyDetector(),
+    RNNForecastDetector.name: RNNForecastDetector(),
 }
 app.add_middleware(
     CORSMiddleware,
@@ -52,10 +54,30 @@ def _detector_points(
     return get_series(dataset, household, range_start, range_end)
 
 
-def _detect_with_window(detector, points, module: str, detection_start: datetime | None):
+def _detect_with_window(
+    detector,
+    points,
+    module: str,
+    detection_start: datetime | None,
+    lookback_days: int = 1,
+):
+    if isinstance(detector, RNNForecastDetector):
+        return detector.detect(
+            points,
+            detection_start=detection_start,
+            lookback_days=lookback_days,
+        )
     if module == "anomaly" and detection_start is not None:
         return detector.detect(points, detection_start=detection_start)
     return detector.detect(points)
+
+
+def _validate_resolution(detector, points) -> None:
+    if isinstance(detector, RNNForecastDetector) and points and points[0].interval_minutes not in {15, 60}:
+        raise HTTPException(
+            status_code=400,
+            detail="RNN forecast currently supports hourly and 15-minute data only",
+        )
 
 
 @app.get("/")
@@ -108,7 +130,14 @@ def detect(request: DetectRequest):
     except KeyError as error:
         detail = "Unknown NILM method" if request.module == "nilm" else "Unknown anomaly method"
         raise HTTPException(status_code=400, detail=detail) from error
-    return _detect_with_window(detector, points, request.module, request.range_start)
+    _validate_resolution(detector, points)
+    return _detect_with_window(
+        detector,
+        points,
+        request.module,
+        request.range_start,
+        request.lookback_days,
+    )
 
 
 @app.get("/event-summary")
@@ -119,10 +148,14 @@ def event_summary(
     method: str = "isolation_forest",
     range_start: datetime | None = None,
     range_end: datetime | None = None,
+    lookback_days: int = 1,
 ):
     """Return detector results together with compact data-quality statistics."""
+    if lookback_days not in {1, 7}:
+        raise HTTPException(status_code=422, detail="lookback_days must be 1 or 7")
     try:
         points = _detector_points(dataset, household, module, range_end, range_start)
+        display_points = get_series(dataset, household, range_start, range_end)
         detector = _get_detector(module, method)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -130,31 +163,41 @@ def event_summary(
         detail = "Unknown NILM method" if module == "nilm" else "Unknown anomaly method"
         raise HTTPException(status_code=400, detail=detail) from error
 
-    events = _detect_with_window(detector, points, module, range_start)
+    _validate_resolution(detector, points)
+    events = _detect_with_window(detector, points, module, range_start, lookback_days)
     event_counts = Counter(event.type for event in events)
-    quality_counts = Counter(point.quality_flag for point in points)
+    quality_counts = Counter(point.quality_flag for point in display_points)
     test_split = None
-    if isinstance(detector, IsolationForestAnomalyDetector):
+    if isinstance(detector, (IsolationForestAnomalyDetector, RNNForecastDetector)):
         electricity_points = [
             point
             for point in points
             if point.quality_flag == "ok" and point.electricity_kwh is not None
         ]
-        training_count = int(len(electricity_points) * detector.training_ratio)
+        training_ratio = getattr(detector, "training_ratio", 0.7)
+        training_count = int(len(electricity_points) * training_ratio)
         if range_start is not None:
             requested_training_count = next(
                 (index for index, point in enumerate(electricity_points) if point.timestamp >= range_start),
                 len(electricity_points),
             )
+            minimum_training_points = (
+                (lookback_days * 1440 // electricity_points[0].interval_minutes)
+                + max(1, 60 // electricity_points[0].interval_minutes)
+                + detector.minimum_training_windows
+                - 1
+                if isinstance(detector, RNNForecastDetector) and electricity_points
+                else detector.minimum_samples
+            )
             if (
-                requested_training_count >= detector.minimum_samples
+                requested_training_count >= minimum_training_points
                 and requested_training_count < len(electricity_points)
             ):
                 training_count = requested_training_count
         if training_count < len(electricity_points):
             test_split = {
                 "timestamp": electricity_points[training_count].timestamp,
-                "training_ratio": detector.training_ratio,
+                "training_ratio": training_count / len(electricity_points),
                 "training_points": training_count,
                 "detection_points": len(electricity_points) - training_count,
             }
@@ -167,9 +210,10 @@ def event_summary(
         "household": household,
         "module": module,
         "method": method,
+        "lookback_days": lookback_days if isinstance(detector, RNNForecastDetector) else None,
         "range_start": range_start,
         "range_end": range_end,
-        "total_points": len(points),
+        "total_points": len(display_points),
         "valid_points": quality_counts.get("ok", 0),
         "partial_points": quality_counts.get("partial", 0),
         "missing_points": quality_counts.get("missing", 0),
@@ -207,6 +251,11 @@ def evaluate(request: EvaluationRequest):
     """Compare the selected detector with one prepared synthetic scenario."""
     if request.dataset != "zonnedael":
         raise HTTPException(status_code=400, detail="Scenario evaluation is only available for Zonnedael")
+    if request.module == "anomaly" and request.method == RNNForecastDetector.name:
+        raise HTTPException(
+            status_code=400,
+            detail="RNN evaluation is not available for the daily-only scenario fixtures",
+        )
     # Scenarios currently contain prepared data for this home only.
     fixture_household = "Klant 34"
     try:
@@ -236,7 +285,13 @@ def evaluate(request: EvaluationRequest):
             event.model_copy(update={"type": event_type_map.get(event.type, event.type)})
             for event in ground_truth
         ]
-    detected = _detect_with_window(detector, points, request.module, request.range_start)
+    detected = _detect_with_window(
+        detector,
+        points,
+        request.module,
+        request.range_start,
+        request.lookback_days,
+    )
     event_types = sorted({event.type for event in detected} | {event.type for event in ground_truth})
     metrics = []
     for event_type in event_types:

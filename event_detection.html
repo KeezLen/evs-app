@@ -52,6 +52,7 @@ svg { display: block; width: 100%; min-width: 700px; height: 350px; background: 
 .series-filter input { width: 17px; min-height: 17px; accent-color: var(--green); }
 .series-filter input:disabled + span { color: var(--muted); }
 .series-availability { color: var(--muted); font-size: 13px; }
+.hidden { display: none !important; }
 .axis { stroke: #9fb3a4; stroke-width: 1; }
 .grid { stroke: #d7e1da; stroke-width: 1; }
 .axis-text { fill: var(--muted); font-size: 12px; }
@@ -104,7 +105,8 @@ tr.event-row:hover, tr.event-row.selected { background: #fff8df; }
     <label>Dataset<select id="dataset"></select></label>
     <label>Household<select id="household"></select></label>
     <label>Module<select id="module"><option value="anomaly">Anomaly</option><option value="nilm">NILM</option></select></label>
-    <label>Method<select id="method"><option value="isolation_forest">Isolation Forest</option><option value="rules">Rules</option></select></label>
+    <label>Method<select id="method"><option value="isolation_forest">Isolation Forest</option><option value="rnn">RNN forecast (experimental)</option><option value="rules">Rules</option></select></label>
+    <label id="lookback-control" class="hidden">RNN lookback<select id="lookback-days"><option value="1">24 hours</option><option value="7">7 days</option></select></label>
     <label>From<input id="from" type="date"></label>
     <label>To<input id="to" type="date"></label>
     <label>Quick range<select id="range-preset"><option value="full">Full dataset</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label>
@@ -112,6 +114,7 @@ tr.event-row:hover, tr.event-row.selected { background: #fff8df; }
       <button id="run">Load analysis</button>
     </div>
     <p id="range-info" class="range-info">Loading recorded date range...</p>
+    <p id="method-info" class="range-info hidden"></p>
   </section>
 
   <section class="stats" aria-label="Summary statistics">
@@ -168,6 +171,7 @@ function selectedRequest() {
     household: $('household').value,
     module: $('module').value,
     method: $('method').value,
+    lookback_days: Number($('lookback-days').value),
   });
   if ($('from').value) params.set('range_start', $('from').value + 'T00:00:00');
   if ($('to').value) params.set('range_end', $('to').value + 'T23:59:59');
@@ -176,8 +180,17 @@ function selectedRequest() {
 function updateMethods() {
   const module = $('module').value;
   $('method').innerHTML = module === 'anomaly'
-    ? '<option value="isolation_forest">Isolation Forest</option>'
+    ? '<option value="isolation_forest">Isolation Forest</option><option value="rnn">RNN forecast (experimental)</option>'
     : '<option value="rules">Rules</option>';
+  updateLookbackControls();
+}
+function updateLookbackControls() {
+  const isRnn = $('method').value === 'rnn';
+  $('lookback-control').classList.toggle('hidden', !isRnn);
+  $('method-info').classList.toggle('hidden', !isRnn);
+  $('method-info').textContent = isRnn
+    ? 'RNN predicts the next hour; 15-minute data produces four interval forecasts. Thresholds use the 99th percentile of held-out training residuals.'
+    : '';
 }
 async function loadRange() {
   const params = new URLSearchParams({ dataset: $('dataset').value, household: $('household').value });
@@ -284,9 +297,17 @@ function renderEvents(events) {
   $('event-note').textContent = events.length > visible.length
     ? 'Showing the first ' + visible.length + ' of ' + events.length + ' event windows.'
     : 'Adjacent anomalous intervals are merged.';
-  $('events').innerHTML = visible.length ? visible.map((event, index) => '<tr class="event-row" data-index="' + index + '"><td><span class="badge ' + (event.type.includes('gas') ? 'gas' : '') + '">' + escapeHtml(event.type) + '</span></td><td>' + formatDate(event.start) + '</td><td>' + formatDate(event.end) + '</td><td>' + formatDuration(event.details.duration_minutes || 0) + '</td><td>' + event.magnitude + '</td><td>' + Math.round(event.confidence * 100) + '%</td></tr>').join('') : '<tr><td colspan="6" class="empty">No events detected in this range.</td></tr>';
+  $('events').innerHTML = visible.length ? visible.map((event, index) => {
+    const direction = event.details.direction ? ' (' + event.details.direction + ')' : '';
+    return '<tr class="event-row" data-index="' + index + '"><td><span class="badge ' + (event.type.includes('gas') ? 'gas' : '') + '">' + escapeHtml(event.type + direction) + '</span></td><td>' + formatDate(event.start) + '</td><td>' + formatDate(event.end) + '</td><td>' + formatDuration(event.details.duration_minutes || 0) + '</td><td>' + event.magnitude + '</td><td>' + Math.round(event.confidence * 100) + '%</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">No events detected in this range.</td></tr>';
 }
 async function runAnalysis() {
+  const selectedDataset = datasets.find((item) => item.id === $('dataset').value);
+  if ($('method').value === 'rnn' && ![15, 60].includes(selectedDataset?.resolution_minutes)) {
+    setStatus('RNN forecast currently supports hourly and 15-minute data only.', true);
+    return;
+  }
   setStatus('Loading series and detector summary...');
   const params = selectedRequest();
   try {
@@ -325,6 +346,10 @@ async function boot() {
   } catch (error) { setStatus('Backend unavailable: ' + error.message, true); }
 }
 $('module').addEventListener('change', updateMethods);
+$('method').addEventListener('change', updateLookbackControls);
+$('lookback-days').addEventListener('change', () => {
+  if ($('method').value === 'rnn') runAnalysis();
+});
 $('dataset').addEventListener('change', () => loadHouseholds().catch((error) => setStatus('Could not load date range: ' + error.message, true)));
 $('household').addEventListener('change', () => loadRange().catch((error) => setStatus('Could not load date range: ' + error.message, true)));
 $('range-preset').addEventListener('change', applyQuickRange);

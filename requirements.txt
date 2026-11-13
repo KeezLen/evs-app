@@ -4,5 +4,6 @@ pydantic
 pandas
 numpy
 scikit-learn
+torch
 pytest
 httpx

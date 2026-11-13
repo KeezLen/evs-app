@@ -54,6 +54,7 @@ class DetectRequest(BaseModel):
     range_end: datetime | None = None
     module: ModuleName
     method: str = "rules"
+    lookback_days: Literal[1, 7] = 1
 
 
 class EvaluationRequest(DetectRequest):
