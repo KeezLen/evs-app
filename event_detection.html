@@ -47,11 +47,17 @@ h2 { margin: 0; color: var(--green-dark); font-size: 20px; }
 .chart-panel { padding-bottom: 16px; margin-bottom: 16px; }
 .chart-wrap { overflow-x: auto; padding: 12px 18px 0; }
 svg { display: block; width: 100%; min-width: 700px; height: 350px; background: var(--canvas); border-radius: 7px; }
+.series-filters { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 12px 18px 0; }
+.series-filter { display: inline-flex; grid-template-columns: auto 1fr; align-items: center; gap: 7px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.series-filter input { width: 17px; min-height: 17px; accent-color: var(--green); }
+.series-filter input:disabled + span { color: var(--muted); }
+.series-availability { color: var(--muted); font-size: 13px; }
 .axis { stroke: #9fb3a4; stroke-width: 1; }
 .grid { stroke: #d7e1da; stroke-width: 1; }
 .axis-text { fill: var(--muted); font-size: 12px; }
 .axis-title { fill: var(--muted); font-size: 13px; font-weight: 600; }
 .series { fill: none; stroke: var(--green-dark); stroke-width: 1.5; }
+.gas-series { fill: none; stroke: var(--blue); stroke-width: 1.5; }
 .event-line { stroke: var(--red); stroke-width: 2; opacity: .55; }
 .event-line.gas { stroke: var(--blue); }
 .test-split { stroke: #6b7280; stroke-width: 2; stroke-dasharray: 7 5; opacity: .9; }
@@ -119,6 +125,11 @@ tr.event-row:hover, tr.event-row.selected { background: #fff8df; }
 
   <section class="panel chart-panel">
     <div class="section-head"><h2>Consumption overview</h2><p class="section-note">Average use, normal variation, and event markers over time.</p></div>
+    <div class="series-filters" aria-label="Series filters">
+      <label class="series-filter"><input id="show-electricity" type="checkbox" checked><span>Electricity series</span></label>
+      <label class="series-filter"><input id="show-gas" type="checkbox"><span>Gas series</span></label>
+      <span id="series-availability" class="series-availability"></span>
+    </div>
     <div class="chart-wrap"><svg id="chart" viewBox="0 0 1200 350" role="img" aria-label="Consumption overview"></svg></div>
     <div class="legend"><span><i class="swatch"></i>Electricity series</span><span><i class="swatch electricity"></i>Electricity event</span><span><i class="swatch gas"></i>Gas event</span></div>
   </section>
@@ -133,6 +144,8 @@ const API = window.EVS_EVENT_API_BASE_URL || 'http://127.0.0.1:8000';
 const $ = (id) => document.getElementById(id);
 let datasets = [];
 let currentEvents = [];
+let currentPoints = [];
+let currentTestSplit = null;
 let rangeBounds = null;
 
 function setStatus(text, error = false) {
@@ -198,15 +211,15 @@ function applyQuickRange() {
   $('from').value = startDate < rangeBounds.start_date ? rangeBounds.start_date : startDate;
   $('to').value = rangeBounds.end_date;
 }
-function downsample(points, limit = 900) {
-  const valid = points.filter((point) => Number.isFinite(point.electricity_kwh));
+function downsample(points, field, limit = 900) {
+  const valid = points.filter((point) => Number.isFinite(point[field]));
   if (!valid.length) return [];
   const bucketSize = Math.max(1, valid.length / limit);
   const output = [];
   for (let start = 0; start < valid.length; start += bucketSize) {
     const bucket = valid.slice(Math.floor(start), Math.ceil(start + bucketSize));
     if (!bucket.length) continue;
-    const values = bucket.map((point) => point.electricity_kwh);
+    const values = bucket.map((point) => point[field]);
     output.push({
       timestamp: bucket[Math.floor(bucket.length / 2)].timestamp,
       minimum: Math.min(...values),
@@ -216,25 +229,43 @@ function downsample(points, limit = 900) {
   }
   return output;
 }
+function setSeriesAvailability(points) {
+  const gasAvailable = points.some((point) => Number.isFinite(point.gas_m3));
+  const gasToggle = $('show-gas');
+  gasToggle.disabled = !gasAvailable;
+  if (!gasAvailable) gasToggle.checked = false;
+  $('series-availability').textContent = gasAvailable ? '' : 'Gas is not available at this dataset resolution.';
+}
 function drawChart(points, events, testSplit) {
   const svg = $('chart');
-  const visible = downsample(points);
-  if (!visible.length) { svg.innerHTML = '<text x="24" y="40" fill="#627268">No valid electricity readings in this range.</text>'; return; }
+  if (!points.length) return;
+  const selected = [];
+  if ($('show-electricity').checked) selected.push({ field: 'electricity_kwh', unit: points[0].interval_minutes >= 1440 ? 'kWh per day' : 'kWh per ' + points[0].interval_minutes + ' min', color: '#1F4128', fill: '#2E5D3A' });
+  if ($('show-gas').checked && points.some((point) => Number.isFinite(point.gas_m3))) selected.push({ field: 'gas_m3', unit: points[0].interval_minutes >= 1440 ? 'm3 per day' : 'm3 per ' + points[0].interval_minutes + ' min', color: '#2563eb', fill: '#2563eb' });
+  const series = selected.map((config) => ({ ...config, points: downsample(points, config.field) })).filter((config) => config.points.length);
+  if (!series.length) { svg.innerHTML = '<text x="24" y="40" fill="#627268">Select at least one available series.</text>'; return; }
   const width = 1200; const height = 350; const pad = { top: 20, right: 24, bottom: 86, left: 64 };
-  const allValues = visible.flatMap((point) => [point.minimum, point.maximum]);
-  const min = Math.min(...allValues, 0); const max = Math.max(...allValues, 1);
   const first = new Date(points[0].timestamp).getTime();
   const last = new Date(points.at(-1).timestamp).getTime();
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const x = (date) => pad.left + ((new Date(date).getTime() - first) / Math.max(1, last - first)) * chartWidth;
-  const y = (value) => height - pad.bottom - ((value - min) / Math.max(1, max - min)) * chartHeight;
-  const averagePath = visible.map((point, index) => (index ? 'L' : 'M') + x(point.timestamp).toFixed(1) + ' ' + y(point.average).toFixed(1)).join(' ');
-  const upperPath = visible.map((point, index) => (index ? 'L' : 'M') + x(point.timestamp).toFixed(1) + ' ' + y(point.maximum).toFixed(1)).join(' ');
-  const lowerPath = visible.slice().reverse().map((point) => 'L' + x(point.timestamp).toFixed(1) + ' ' + y(point.minimum).toFixed(1)).join(' ');
+  const scales = series.map((config) => {
+    const values = config.points.flatMap((point) => [point.minimum, point.maximum]);
+    return { ...config, min: 0, max: Math.max(...values, 1) };
+  });
+  const yFor = (scale, value) => height - pad.bottom - ((value - scale.min) / Math.max(1, scale.max - scale.min)) * chartHeight;
   const eventBandTop = height - pad.bottom + 8;
-  const yTicks = Array.from({ length: 5 }, (_, index) => min + ((max - min) * index) / 4);
-  const yGrid = yTicks.map((value) => '<line class="grid" x1="' + pad.left + '" y1="' + y(value).toFixed(1) + '" x2="' + (width - pad.right) + '" y2="' + y(value).toFixed(1) + '"/><text class="axis-text" x="' + (pad.left - 8) + '" y="' + (y(value) + 4).toFixed(1) + '" text-anchor="end">' + value.toFixed(2) + '</text>').join('');
+  const yTicks = Array.from({ length: 5 }, (_, index) => (scales[0].max * index) / 4);
+  const yGrid = yTicks.map((value) => '<line class="grid" x1="' + pad.left + '" y1="' + yFor(scales[0], value).toFixed(1) + '" x2="' + (width - pad.right) + '" y2="' + yFor(scales[0], value).toFixed(1) + '"/><text class="axis-text" x="' + (pad.left - 8) + '" y="' + (yFor(scales[0], value) + 4).toFixed(1) + '" text-anchor="end">' + value.toFixed(2) + '</text>').join('');
+  const seriesPaths = scales.map((scale) => {
+    const averagePath = scale.points.map((point, index) => (index ? 'L' : 'M') + x(point.timestamp).toFixed(1) + ' ' + yFor(scale, point.average).toFixed(1)).join(' ');
+    const upperPath = scale.points.map((point, index) => (index ? 'L' : 'M') + x(point.timestamp).toFixed(1) + ' ' + yFor(scale, point.maximum).toFixed(1)).join(' ');
+    const lowerPath = scale.points.slice().reverse().map((point) => 'L' + x(point.timestamp).toFixed(1) + ' ' + yFor(scale, point.minimum).toFixed(1)).join(' ');
+    const className = scale.field === 'gas_m3' ? 'gas-series' : 'series';
+    return '<path d="' + upperPath + ' ' + lowerPath + ' Z" fill="' + scale.fill + '" opacity=".12"/><path class="' + className + '" d="' + averagePath + '"/>';
+  }).join('');
+  const rightAxis = scales.length > 1 ? '<line class="axis" x1="' + (width - pad.right) + '" y1="' + pad.top + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '"/>' + Array.from({ length: 5 }, (_, index) => { const value = (scales[1].max * index) / 4; return '<text class="axis-text" x="' + (width - pad.right + 8) + '" y="' + (yFor(scales[1], value) + 4).toFixed(1) + '">' + value.toFixed(2) + '</text>'; }).join('') : '';
   const spanDays = (last - first) / 86400000;
   const dateOptions = spanDays > 120 ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' };
   const xTicks = Array.from({ length: 6 }, (_, index) => {
@@ -244,8 +275,8 @@ function drawChart(points, events, testSplit) {
   }).join('');
   const lines = events.map((event) => '<line class="event-line ' + (event.type.includes('gas') ? 'gas' : '') + '" x1="' + x(event.start).toFixed(1) + '" y1="' + eventBandTop + '" x2="' + x(event.start).toFixed(1) + '" y2="' + (eventBandTop + 20) + '"><title>' + escapeHtml(event.type + ' ' + formatDate(event.start)) + '</title></line>').join('');
   const splitLine = testSplit ? '<line class="test-split" x1="' + x(testSplit.timestamp).toFixed(1) + '" y1="' + pad.top + '" x2="' + x(testSplit.timestamp).toFixed(1) + '" y2="' + (height - pad.bottom) + '"/><text class="axis-text" x="' + Math.min(width - pad.right - 8, x(testSplit.timestamp) + 6).toFixed(1) + '" y="' + (pad.top - 6) + '" text-anchor="start">Test split</text>' : '';
-  const unit = points[0].interval_minutes >= 1440 ? 'kWh per day' : 'kWh per ' + points[0].interval_minutes + ' min';
-  svg.innerHTML = yGrid + '<line class="axis" x1="' + pad.left + '" y1="' + pad.top + '" x2="' + pad.left + '" y2="' + (height - pad.bottom) + '"/><line class="axis" x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '"/><path d="' + upperPath + ' ' + lowerPath + ' Z" fill="#2E5D3A" opacity=".14"/><path class="series" d="' + averagePath + '"/><line class="axis" x1="' + pad.left + '" y1="' + eventBandTop + '" x2="' + (width - pad.right) + '" y2="' + eventBandTop + '"/>' + splitLine + lines + xTicks + '<text class="axis-title" x="' + (pad.left + chartWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">Date</text><text class="axis-title" x="16" y="' + (pad.top + chartHeight / 2) + '" text-anchor="middle" transform="rotate(-90 16 ' + (pad.top + chartHeight / 2) + ')">' + unit + '</text>';
+  const unit = scales.length > 1 ? scales[0].unit + ' / ' + scales[1].unit : scales[0].unit;
+  svg.innerHTML = yGrid + '<line class="axis" x1="' + pad.left + '" y1="' + pad.top + '" x2="' + pad.left + '" y2="' + (height - pad.bottom) + '"/>' + rightAxis + '<line class="axis" x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '"/>' + seriesPaths + '<line class="axis" x1="' + pad.left + '" y1="' + eventBandTop + '" x2="' + (width - pad.right) + '" y2="' + eventBandTop + '"/>' + splitLine + lines + xTicks + '<text class="axis-title" x="' + (pad.left + chartWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">Date</text><text class="axis-title" x="16" y="' + (pad.top + chartHeight / 2) + '" text-anchor="middle" transform="rotate(-90 16 ' + (pad.top + chartHeight / 2) + ')">' + unit + '</text>';
 }
 function renderEvents(events) {
   currentEvents = events;
@@ -265,6 +296,10 @@ async function runAnalysis() {
     ]);
     if (!seriesResponse.ok || !summaryResponse.ok) throw new Error('Backend returned an error');
     const [points, summary] = await Promise.all([seriesResponse.json(), summaryResponse.json()]);
+    currentPoints = points;
+    currentEvents = summary.events;
+    currentTestSplit = summary.test_split;
+    setSeriesAvailability(points);
     $('total').textContent = summary.total_points;
     $('valid').textContent = summary.valid_points;
     $('incomplete').textContent = summary.partial_points + summary.missing_points;
@@ -294,6 +329,8 @@ $('dataset').addEventListener('change', () => loadHouseholds().catch((error) => 
 $('household').addEventListener('change', () => loadRange().catch((error) => setStatus('Could not load date range: ' + error.message, true)));
 $('range-preset').addEventListener('change', applyQuickRange);
 $('run').addEventListener('click', runAnalysis);
+$('show-electricity').addEventListener('change', () => drawChart(currentPoints, currentEvents, currentTestSplit));
+$('show-gas').addEventListener('change', () => drawChart(currentPoints, currentEvents, currentTestSplit));
 boot();
 </script>
 </body>
