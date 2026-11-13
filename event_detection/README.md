@@ -77,6 +77,10 @@ electricity and gas observations, using calendar and available weather context.
 At least 30 valid observations are required per signal. The detector reports
 generic `unusual_electricity` and `unusual_gas` events; it does not identify an
 appliance or causal explanation. Partial and missing observations are excluded.
+The current implementation trains on the first 70% of the selected history and
+scores the final 30%, with a provisional 1% contamination rate. These are
+explicitly tunable assumptions to revisit when better performance evidence or
+real event labels become available.
 Adjacent Isolation Forest intervals are merged into one event window. The
 analyst summary reports the full event count and duration; its table limits the
 visible rows for responsiveness.

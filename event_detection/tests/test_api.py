@@ -53,6 +53,8 @@ def test_event_summary_returns_quality_and_event_statistics():
     assert body["valid_points"] == 364
     assert body["event_count"] == len(body["events"])
     assert "events_by_type" in body
+    assert body["test_split"]["training_ratio"] == 0.7
+    assert body["test_split"]["training_points"] < body["total_points"]
 
 
 def test_series_range_returns_household_dataset_bounds():

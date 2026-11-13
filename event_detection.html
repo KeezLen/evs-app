@@ -54,6 +54,7 @@ svg { display: block; width: 100%; min-width: 700px; height: 350px; background: 
 .series { fill: none; stroke: var(--green-dark); stroke-width: 1.5; }
 .event-line { stroke: var(--red); stroke-width: 2; opacity: .55; }
 .event-line.gas { stroke: var(--blue); }
+.test-split { stroke: #6b7280; stroke-width: 2; stroke-dasharray: 7 5; opacity: .9; }
 .legend { display: flex; flex-wrap: wrap; gap: 12px; padding: 10px 18px 0; color: var(--muted); font-size: 13px; }
 .legend span { display: inline-flex; gap: 5px; align-items: center; }
 .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--green-dark); }
@@ -215,7 +216,7 @@ function downsample(points, limit = 900) {
   }
   return output;
 }
-function drawChart(points, events) {
+function drawChart(points, events, testSplit) {
   const svg = $('chart');
   const visible = downsample(points);
   if (!visible.length) { svg.innerHTML = '<text x="24" y="40" fill="#627268">No valid electricity readings in this range.</text>'; return; }
@@ -242,8 +243,9 @@ function drawChart(points, events) {
     return '<line class="axis" x1="' + x(date).toFixed(1) + '" y1="' + (height - pad.bottom) + '" x2="' + x(date).toFixed(1) + '" y2="' + (height - pad.bottom + 5) + '"/><text class="axis-text" x="' + x(date).toFixed(1) + '" y="' + (height - pad.bottom + 43) + '" text-anchor="middle">' + date.toLocaleDateString(undefined, dateOptions) + '</text>';
   }).join('');
   const lines = events.map((event) => '<line class="event-line ' + (event.type.includes('gas') ? 'gas' : '') + '" x1="' + x(event.start).toFixed(1) + '" y1="' + eventBandTop + '" x2="' + x(event.start).toFixed(1) + '" y2="' + (eventBandTop + 20) + '"><title>' + escapeHtml(event.type + ' ' + formatDate(event.start)) + '</title></line>').join('');
+  const splitLine = testSplit ? '<line class="test-split" x1="' + x(testSplit.timestamp).toFixed(1) + '" y1="' + pad.top + '" x2="' + x(testSplit.timestamp).toFixed(1) + '" y2="' + (height - pad.bottom) + '"/><text class="axis-text" x="' + Math.min(width - pad.right - 8, x(testSplit.timestamp) + 6).toFixed(1) + '" y="' + (pad.top - 6) + '" text-anchor="start">Test split</text>' : '';
   const unit = points[0].interval_minutes >= 1440 ? 'kWh per day' : 'kWh per ' + points[0].interval_minutes + ' min';
-  svg.innerHTML = yGrid + '<line class="axis" x1="' + pad.left + '" y1="' + pad.top + '" x2="' + pad.left + '" y2="' + (height - pad.bottom) + '"/><line class="axis" x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '"/><path d="' + upperPath + ' ' + lowerPath + ' Z" fill="#2E5D3A" opacity=".14"/><path class="series" d="' + averagePath + '"/><line class="axis" x1="' + pad.left + '" y1="' + eventBandTop + '" x2="' + (width - pad.right) + '" y2="' + eventBandTop + '"/>' + lines + xTicks + '<text class="axis-title" x="' + (pad.left + chartWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">Date</text><text class="axis-title" x="16" y="' + (pad.top + chartHeight / 2) + '" text-anchor="middle" transform="rotate(-90 16 ' + (pad.top + chartHeight / 2) + ')">' + unit + '</text>';
+  svg.innerHTML = yGrid + '<line class="axis" x1="' + pad.left + '" y1="' + pad.top + '" x2="' + pad.left + '" y2="' + (height - pad.bottom) + '"/><line class="axis" x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '"/><path d="' + upperPath + ' ' + lowerPath + ' Z" fill="#2E5D3A" opacity=".14"/><path class="series" d="' + averagePath + '"/><line class="axis" x1="' + pad.left + '" y1="' + eventBandTop + '" x2="' + (width - pad.right) + '" y2="' + eventBandTop + '"/>' + splitLine + lines + xTicks + '<text class="axis-title" x="' + (pad.left + chartWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">Date</text><text class="axis-title" x="16" y="' + (pad.top + chartHeight / 2) + '" text-anchor="middle" transform="rotate(-90 16 ' + (pad.top + chartHeight / 2) + ')">' + unit + '</text>';
 }
 function renderEvents(events) {
   currentEvents = events;
@@ -269,7 +271,7 @@ async function runAnalysis() {
     $('event-count').textContent = summary.event_count;
     $('duration').textContent = formatDuration(summary.anomalous_duration_minutes);
     $('types').textContent = Object.keys(summary.events_by_type).length;
-    drawChart(points, summary.events);
+    drawChart(points, summary.events, summary.test_split);
     renderEvents(summary.events);
     setStatus('Loaded ' + summary.total_points + ' readings for ' + summary.household + '.');
   } catch (error) {

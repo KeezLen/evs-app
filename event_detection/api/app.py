@@ -108,6 +108,21 @@ def event_summary(
     events = detector.detect(points)
     event_counts = Counter(event.type for event in events)
     quality_counts = Counter(point.quality_flag for point in points)
+    test_split = None
+    if isinstance(detector, IsolationForestAnomalyDetector):
+        electricity_points = [
+            point
+            for point in points
+            if point.quality_flag == "ok" and point.electricity_kwh is not None
+        ]
+        training_count = int(len(electricity_points) * detector.training_ratio)
+        if training_count < len(electricity_points):
+            test_split = {
+                "timestamp": electricity_points[training_count].timestamp,
+                "training_ratio": detector.training_ratio,
+                "training_points": training_count,
+                "detection_points": len(electricity_points) - training_count,
+            }
     duration_minutes = sum(
         int((event.end - event.start).total_seconds() / 60)
         for event in events
@@ -126,6 +141,7 @@ def event_summary(
         "event_count": len(events),
         "events_by_type": dict(sorted(event_counts.items())),
         "anomalous_duration_minutes": duration_minutes,
+        "test_split": test_split,
         "events": events,
     }
 

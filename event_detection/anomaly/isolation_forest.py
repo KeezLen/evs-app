@@ -15,16 +15,24 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
     """Detect unusual electricity and gas observations per household series."""
 
     name = "isolation_forest"
+    # Provisional chronological split. Revisit this with validation results if
+    # a different household history length improves detector performance.
+    training_ratio = 0.7
+    # A conservative initial rate is appropriate while real event labels are
+    # unavailable. This remains tunable after comparing false positives.
+    contamination = 0.01
 
     def __init__(
         self,
-        contamination: float = 0.05,
+        contamination: float | None = None,
         minimum_samples: int = 30,
+        training_ratio: float | None = None,
         random_state: int = 42,
         n_estimators: int = 200,
     ) -> None:
-        self.contamination = contamination
+        self.contamination = contamination if contamination is not None else self.contamination
         self.minimum_samples = minimum_samples
+        self.training_ratio = training_ratio if training_ratio is not None else self.training_ratio
         self.random_state = random_state
         self.n_estimators = n_estimators
 
@@ -47,18 +55,23 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
             for point in series
             if point.quality_flag == "ok" and getattr(point, value_attribute) is not None
         ]
-        if len(points) < self.minimum_samples:
+        training_count = int(len(points) * self.training_ratio)
+        if training_count < self.minimum_samples or training_count >= len(points):
             return []
 
-        features = self._features(points, value_attribute)
+        training_points = points[:training_count]
+        detection_points = points[training_count:]
+        training_features = self._features(training_points, value_attribute)
+        detection_features = self._features(detection_points, value_attribute)
         model = IsolationForest(
             contamination=self.contamination,
             n_estimators=self.n_estimators,
             random_state=self.random_state,
         )
-        predictions = model.fit_predict(features)
-        decisions = model.decision_function(features)
-        baseline = float(np.median([getattr(point, value_attribute) for point in points]))
+        model.fit(training_features)
+        predictions = model.predict(detection_features)
+        decisions = model.decision_function(detection_features)
+        baseline = float(np.median([getattr(point, value_attribute) for point in training_points]))
         events = [
             self._event(
                 point,
@@ -69,7 +82,7 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
                 self._confidence(decisions, index),
             )
             for index, (point, prediction, decision) in enumerate(
-                zip(points, predictions, decisions)
+                zip(detection_points, predictions, decisions)
             )
             if prediction == -1
         ]
