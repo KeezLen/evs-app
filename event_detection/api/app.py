@@ -1,8 +1,11 @@
 """Standalone HTTP API for event detection."""
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from threading import RLock
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,10 +14,13 @@ from event_detection.config import settings
 from event_detection.data import available_datasets, get_series
 from event_detection.anomaly import IsolationForestAnomalyDetector, RNNForecastDetector
 from event_detection.evaluation.matching import match_events
+from event_detection.evaluation.benchmark import run_household_benchmark
 from event_detection.evaluation.scenarios import load_scenario
+from event_detection.evaluation.weather_audit import audit_weather_linkage
 from event_detection.nilm import detector_registry
 from event_detection.schemas import (
     DetectRequest,
+    BenchmarkRequest,
     EvaluationMetric,
     EvaluationRequest,
     EvaluationResponse,
@@ -32,6 +38,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+_BENCHMARK_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="event-benchmark")
+_BENCHMARK_JOBS: dict[str, dict] = {}
+_BENCHMARK_JOBS_LOCK = RLock()
 
 
 def _get_detector(module: str, method: str):
@@ -88,7 +97,7 @@ def root():
         "service": settings.api_title,
         "status": "ok",
         "docs": "/docs",
-        "endpoints": ["/datasets", "/series", "/detect", "/evaluate"],
+        "endpoints": ["/datasets", "/series", "/detect", "/evaluate", "/benchmark"],
     }
 
 
@@ -244,6 +253,161 @@ def series_range(dataset: str, household: str):
         "resolution_minutes": points[0].interval_minutes,
         "point_count": len(points),
     }
+
+
+def _benchmark_aggregate(results: list[dict]) -> list[dict]:
+    grouped: dict[tuple[str, str, str], list[dict]] = {}
+    for result in results:
+        for method in result["methods"]:
+            if not method.get("applicable"):
+                continue
+            for metric in method["scores"]["classes"]:
+                key = (method["method"], metric["signal"], metric["direction"])
+                grouped.setdefault(key, []).append({
+                    **metric,
+                    "household": result["household"],
+                    "normal_events_per_week": next(
+                        (
+                            normal_metric["alerts_per_household_week"]
+                            for normal_metric in method["normal_scores"]["classes"]
+                            if normal_metric["signal"] == metric["signal"]
+                            and normal_metric["direction"] == metric["direction"]
+                        ),
+                        0.0,
+                    ),
+                })
+    aggregate = []
+    for (method, signal, direction), rows in sorted(grouped.items()):
+        aggregate.append({
+            "method": method,
+            "signal": signal,
+            "direction": direction,
+            "households": len(rows),
+            "macro_precision": round(sum(row["precision"] for row in rows) / len(rows), 4),
+            "macro_recall": round(sum(row["recall"] for row in rows) / len(rows), 4),
+            "macro_f1": round(sum(row["f1"] for row in rows) / len(rows), 4),
+            "mean_unmatched_injected_events": round(sum(row["false_positives"] for row in rows) / len(rows), 3),
+            "mean_no_injection_events_per_week": round(
+                sum(row["normal_events_per_week"] for row in rows) / len(rows), 3
+            ),
+        })
+    return aggregate
+
+
+def _run_benchmark_job(
+    job_id: str,
+    request: BenchmarkRequest,
+    households: list[str],
+    weather_audit: dict,
+) -> None:
+    with _BENCHMARK_JOBS_LOCK:
+        _BENCHMARK_JOBS[job_id]["status"] = "running"
+    results: list[dict] = []
+    errors: list[dict[str, str]] = []
+    for index, household in enumerate(households):
+        try:
+            result = run_household_benchmark(
+                request.dataset,
+                household,
+                request.patterns,
+                request.seed,
+                bool(weather_audit["weather_gas_enabled"]),
+                request.lookback_days,
+                request.strengths,
+            )
+            results.append(result)
+        except Exception as error:
+            errors.append({"household": household, "error": str(error)})
+        with _BENCHMARK_JOBS_LOCK:
+            _BENCHMARK_JOBS[job_id].update({
+                "completed_households": index + 1,
+                "current_household": household,
+                "results": results,
+                "errors": errors,
+            })
+    with _BENCHMARK_JOBS_LOCK:
+        _BENCHMARK_JOBS[job_id].update({
+            "status": "completed" if results else "failed",
+            "aggregate": _benchmark_aggregate(results),
+            "weather_audit": weather_audit,
+        })
+
+
+@app.get("/benchmark/weather-audit")
+def benchmark_weather_audit(household: str = "Klant 34"):
+    """Audit daily/hourly weather and gas alignment before weather scenarios."""
+    try:
+        return audit_weather_linkage(household)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/benchmark")
+def start_benchmark(request: BenchmarkRequest):
+    """Run one household now, or queue all included households with progress."""
+    allowed_strengths = {0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 2.0}
+    if not request.patterns:
+        raise HTTPException(status_code=400, detail="Select at least one benchmark pattern")
+    if not request.strengths or not set(request.strengths) <= allowed_strengths:
+        raise HTTPException(status_code=400, detail="Unsupported injection strength")
+    dataset_info = next((item for item in available_datasets() if item.id == request.dataset), None)
+    if dataset_info is None or not dataset_info.available:
+        raise HTTPException(status_code=400, detail="Unknown or unavailable benchmark dataset")
+    if request.all_households:
+        households = dataset_info.households
+    elif request.household:
+        households = [request.household]
+    else:
+        raise HTTPException(status_code=400, detail="Select a household or enable all households")
+    if not households:
+        raise HTTPException(status_code=400, detail="No included households are available for this dataset")
+    audit_household = "Klant 34" if "Klant 34" in households else households[0]
+    try:
+        weather_audit = audit_weather_linkage(audit_household)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if request.all_households:
+        job_id = uuid4().hex
+        with _BENCHMARK_JOBS_LOCK:
+            _BENCHMARK_JOBS[job_id] = {
+                "job_id": job_id,
+                "status": "queued",
+                "total_households": len(households),
+                "completed_households": 0,
+                "current_household": None,
+                "results": [],
+                "errors": [],
+                "weather_audit": weather_audit,
+            }
+        _BENCHMARK_EXECUTOR.submit(_run_benchmark_job, job_id, request, households, weather_audit)
+        return {"job_id": job_id, "status": "queued", "total_households": len(households)}
+    try:
+        result = run_household_benchmark(
+            request.dataset,
+            households[0],
+            request.patterns,
+            request.seed,
+            bool(weather_audit["weather_gas_enabled"]),
+            request.lookback_days,
+            request.strengths,
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {
+        "status": "completed",
+        "weather_audit": weather_audit,
+        "results": [result],
+        "aggregate": _benchmark_aggregate([result]),
+    }
+
+
+@app.get("/benchmark/jobs/{job_id}")
+def benchmark_job(job_id: str):
+    with _BENCHMARK_JOBS_LOCK:
+        job = _BENCHMARK_JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Benchmark job not found")
+        return job
 
 
 @app.post("/evaluate", response_model=EvaluationResponse)

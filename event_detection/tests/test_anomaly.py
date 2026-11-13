@@ -34,6 +34,28 @@ def test_isolation_forest_uses_provisional_chronological_defaults():
     assert detector.contamination == 0.01
 
 
+def test_isolation_forest_benchmark_scores_only_test_using_calibration():
+    start = datetime(2026, 1, 1)
+    series = [
+        SeriesPoint(
+            timestamp=start + timedelta(days=index),
+            electricity_kwh=50 if index == 90 else 10 + (index % 5) * 0.2,
+            quality_flag="ok",
+        )
+        for index in range(100)
+    ]
+    training, calibration, test = series[:70], series[70:80], series[80:]
+
+    events = IsolationForestAnomalyDetector(contamination=0.1).detect_benchmark(
+        training,
+        calibration,
+        test,
+    )
+
+    assert all(event.start >= test[0].timestamp for event in events)
+    assert all(event.method == "isolation_forest" for event in events)
+
+
 def test_isolation_forest_uses_history_before_requested_detection_window():
     series = _series_with_electricity_spike()
     detection_start = datetime(2026, 2, 12)

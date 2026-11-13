@@ -49,6 +49,104 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
             events.extend(signal_events)
         return sorted(events, key=lambda event: event.start)
 
+    def detect_benchmark(
+        self,
+        training: Sequence[SeriesPoint],
+        calibration: Sequence[SeriesPoint],
+        test: Sequence[SeriesPoint],
+    ) -> list[Event]:
+        """Fit on training, calibrate the score cutoff, and score test only."""
+        events: list[Event] = []
+        for signal_name in ("electricity", "gas"):
+            attribute = "electricity_kwh" if signal_name == "electricity" else "gas_m3"
+
+            def valid(points: Sequence[SeriesPoint]) -> list[SeriesPoint]:
+                return [
+                    point for point in points
+                    if point.quality_flag == "ok" and getattr(point, attribute) is not None
+                ]
+
+            train_points = valid(training)
+            calibration_points = valid(calibration)
+            test_points = valid(test)
+            if len(train_points) < self.minimum_samples or len(calibration_points) < 10 or not test_points:
+                continue
+            model = IsolationForest(
+                contamination="auto",
+                n_estimators=self.n_estimators,
+                random_state=self.random_state,
+            )
+            model.fit(self._features(train_points, attribute))
+            calibration_scores = model.decision_function(self._features(calibration_points, attribute))
+            threshold = float(np.quantile(calibration_scores, self.contamination))
+            test_scores = model.decision_function(self._features(test_points, attribute))
+            baseline = float(np.median([getattr(point, attribute) for point in train_points]))
+            events.extend(
+                self._event(
+                    point,
+                    signal_name,
+                    float(getattr(point, attribute)),
+                    baseline,
+                    float(score),
+                    self._confidence(test_scores, index),
+                )
+                for index, (point, score) in enumerate(zip(test_points, test_scores))
+                if score <= threshold
+            )
+        return sorted(self._aggregate_events(events), key=lambda event: event.start)
+
+    def detect_benchmark(
+        self,
+        training: Sequence[SeriesPoint],
+        calibration: Sequence[SeriesPoint],
+        test: Sequence[SeriesPoint],
+    ) -> list[Event]:
+        """Fit on training, calibrate on calibration, and score test only."""
+        events: list[Event] = []
+        for signal_name in ("electricity", "gas"):
+            attribute = "electricity_kwh" if signal_name == "electricity" else "gas_m3"
+            train_points = [
+                point for point in training
+                if point.quality_flag == "ok" and getattr(point, attribute) is not None
+            ]
+            calibration_points = [
+                point for point in calibration
+                if point.quality_flag == "ok" and getattr(point, attribute) is not None
+            ]
+            test_points = [
+                point for point in test
+                if point.quality_flag == "ok" and getattr(point, attribute) is not None
+            ]
+            if (
+                len(train_points) < self.minimum_samples
+                or len(calibration_points) < 10
+                or not test_points
+            ):
+                continue
+            model = IsolationForest(
+                contamination="auto",
+                n_estimators=self.n_estimators,
+                random_state=self.random_state,
+            )
+            model.fit(self._features(train_points, attribute))
+            calibration_scores = model.decision_function(self._features(calibration_points, attribute))
+            score_threshold = float(np.quantile(calibration_scores, self.contamination))
+            test_scores = model.decision_function(self._features(test_points, attribute))
+            baseline = float(np.median([getattr(point, attribute) for point in train_points]))
+            events.extend(
+                self._event(
+                    point,
+                    signal_name,
+                    float(getattr(point, attribute)),
+                    baseline,
+                    float(score),
+                    self._confidence(test_scores, index),
+                )
+                for index, (point, score) in enumerate(zip(test_points, test_scores))
+                if score <= score_threshold
+            )
+        return sorted(self._aggregate_events(events), key=lambda event: event.start)
+
     def _detect_signal(
         self,
         series: Sequence[SeriesPoint],
@@ -110,7 +208,11 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
         current = [events[0]]
         for event in events[1:]:
             previous = current[-1]
-            if event.type == previous.type and event.start == previous.end:
+            if (
+                event.type == previous.type
+                and event.details.get("direction") == previous.details.get("direction")
+                and event.start == previous.end
+            ):
                 current.append(event)
             else:
                 aggregated.append(IsolationForestAnomalyDetector._merge_events(current))
@@ -187,6 +289,7 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
                 "observed": value,
                 "median": round(baseline, 3),
                 "anomaly_score": round(-decision, 6),
+                "direction": "high" if value >= baseline else "low",
                 "quality_flag": point.quality_flag,
             },
         )

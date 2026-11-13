@@ -34,6 +34,13 @@ date filtering. The selected date range is the detection window; Isolation
 Forest and RNN automatically use earlier available household readings as
 training history when enough data exists.
 
+For controlled detector comparisons, open `event_benchmark.html`. Select a
+household for an immediate run, or choose all included households to run a
+background batch with progress. The benchmark splits each series chronologically
+70%/10%/20% for training, calibration, and test, and injects labeled changes
+only into an in-memory copy of the test partition. These are synthetic
+sensitivity tests, not appliance labels or naturally observed faults.
+
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose
 a date range, and click **Run detection**. The tab loads the selected series
@@ -54,6 +61,12 @@ visible as breaks in the chart.
   totals, durations, and event windows for the analyst view.
 - `GET /series-range?dataset=...&household=...` returns the recorded start and
   end dates for the selected household and dataset.
+- `GET /benchmark/weather-audit?household=...` reports daily/hourly weather
+  coverage, date alignment, temperature summary differences, and gas
+  reconciliation.
+- `POST /benchmark` runs one household synchronously or queues all included
+  households and returns a job ID. Poll `GET /benchmark/jobs/{job_id}` for
+  progress and results.
 - `POST /evaluate` uses the same request plus `tolerance_minutes` and a
   `scenario`.
 
@@ -97,6 +110,24 @@ Median +/- 3 MAD is a possible alternative: it is robust and compact, but less
 responsive to skewed residual tails. RNN is currently limited to 15-minute and
 hourly data; the prepared evaluation scenarios are daily and therefore do not
 support RNN evaluation yet.
+
+The benchmark currently compares Rules on daily data and Isolation Forest/RNN
+on supported resolutions. Select event families and relative strengths in the
+benchmark UI. It injects household-relative spikes (+50%, +100%,
++200%), low-use changes (-50%, -80%), and sustained high-use shifts (+30%,
++60% for 6 or 24 hours). Weather-aware gas injections are enabled only when the
+weather audit passes; the audit currently finds complete daily/hourly
+temperature coverage, aligned dates, and gas sums within 0.001 m3 on comparable
+days. Mean daily/hourly temperature difference is about 0.11 C. KNMI De Bilt
+remains a proxy because the households' actual location is unknown; each
+resolution uses its own weather values.
+
+Event matching is one-to-one and requires at least 50% ground-truth duration
+overlap after a one-interval tolerance. Results include per-household and
+macro precision/recall/F1, unmatched detections on injected test data, alerts on
+the untouched test copy per household-week, detection delay, duration overlap,
+and runtime. All-household runs use an in-memory job registry; job state does
+not survive an API restart.
 
 ## Adding data
 

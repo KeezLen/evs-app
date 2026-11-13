@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import math
 
 from event_detection.anomaly.rnn import RNNForecastDetector
+from event_detection.evaluation.benchmark import chronological_split
 from event_detection.schemas import SeriesPoint
 
 
@@ -79,4 +80,20 @@ def test_rnn_predicts_four_quarter_hour_steps_for_one_hour_horizon():
 
     assert events
     assert all(event.start >= detection_start for event in events)
+    assert all(event.details["forecast_horizon_minutes"] == 60 for event in events)
+
+
+def test_rnn_benchmark_uses_explicit_train_calibration_test_partitions():
+    RNNForecastDetector._model_cache.clear()
+    partitions = chronological_split(_hourly_history())
+    test_start = partitions.test[0].timestamp
+
+    events = RNNForecastDetector().detect_benchmark(
+        partitions.training,
+        partitions.calibration,
+        partitions.test,
+        lookback_days=1,
+    )
+
+    assert all(event.start >= test_start for event in events)
     assert all(event.details["forecast_horizon_minutes"] == 60 for event in events)

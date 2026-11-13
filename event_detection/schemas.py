@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 ModuleName = Literal["nilm", "anomaly"]
 EvaluationScenario = Literal["normal", "high_use", "missing", "incomplete"]
+BenchmarkPattern = Literal["spikes", "sustained_high", "low_use", "weather_gas"]
 
 
 class Event(BaseModel):
@@ -60,6 +61,18 @@ class DetectRequest(BaseModel):
 class EvaluationRequest(DetectRequest):
     tolerance_minutes: int = Field(default=1440, ge=0)
     scenario: EvaluationScenario = "high_use"
+
+
+class BenchmarkRequest(BaseModel):
+    dataset: str
+    household: str | None = "Klant 34"
+    all_households: bool = False
+    patterns: list[BenchmarkPattern] = Field(
+        default_factory=lambda: ["spikes", "sustained_high", "low_use", "weather_gas"]
+    )
+    strengths: list[float] = Field(default_factory=lambda: [0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 2.0])
+    seed: int = Field(default=17, ge=0)
+    lookback_days: Literal[1, 7] = 1
 
 
 class EvaluationMetric(BaseModel):

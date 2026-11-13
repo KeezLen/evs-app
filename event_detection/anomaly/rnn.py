@@ -69,6 +69,86 @@ class RNNForecastDetector(AnomalyDetector):
             events.extend(self._detect_signal(points, signal_name, detection_start, lookback_days))
         return sorted(events, key=lambda event: event.start)
 
+    def detect_benchmark(
+        self,
+        training: Sequence[SeriesPoint],
+        calibration: Sequence[SeriesPoint],
+        test: Sequence[SeriesPoint],
+        lookback_days: int = 1,
+    ) -> list[Event]:
+        """Fit on the training partition, calibrate on calibration, score test."""
+        if lookback_days not in {1, 7}:
+            raise ValueError("RNN lookback_days must be 1 or 7")
+        events: list[Event] = []
+        for signal_name in ("electricity", "gas"):
+            events.extend(self._detect_benchmark_signal(
+                training, calibration, test, signal_name, lookback_days
+            ))
+        return sorted(events, key=lambda event: event.start)
+
+    def _detect_benchmark_signal(
+        self,
+        training: Sequence[SeriesPoint],
+        calibration: Sequence[SeriesPoint],
+        test: Sequence[SeriesPoint],
+        signal_name: str,
+        lookback_days: int,
+    ) -> list[Event]:
+        value_attribute = "electricity_kwh" if signal_name == "electricity" else "gas_m3"
+
+        def valid(points: Sequence[SeriesPoint]) -> list[SeriesPoint]:
+            return [point for point in points if point.quality_flag == "ok" and getattr(point, value_attribute) is not None]
+
+        training_points = valid(training)
+        calibration_points = valid(calibration)
+        test_points = valid(test)
+        if not training_points or not calibration_points or not test_points:
+            return []
+        interval_minutes = training_points[0].interval_minutes
+        if interval_minutes not in {15, 60} or any(point.interval_minutes != interval_minutes for point in training_points + calibration_points + test_points):
+            return []
+        horizon_steps = 60 // interval_minutes
+        lookback_steps = lookback_days * 1440 // interval_minutes
+        bundle = self._get_or_train(
+            training_points,
+            value_attribute,
+            signal_name,
+            lookback_steps,
+            horizon_steps,
+            calibration_points=calibration_points,
+        )
+        if bundle is None:
+            return []
+
+        full_history = sorted(training_points + calibration_points + test_points, key=lambda point: point.timestamp)
+        detection_start = test_points[0].timestamp
+        events: list[Event] = []
+        for segment in self._contiguous_segments(full_history, value_attribute):
+            target_start = max(
+                lookback_steps,
+                next((index for index, point in enumerate(segment) if point.timestamp >= detection_start), len(segment)),
+            )
+            for target_start in range(target_start, len(segment) - horizon_steps + 1, horizon_steps):
+                context = segment[target_start - lookback_steps:target_start]
+                inputs = np.asarray([
+                    self._features(point, value_attribute, bundle.center, bundle.scale)
+                    for point in context
+                ], dtype=np.float32)
+                with torch.inference_mode():
+                    predictions = bundle.model(torch.from_numpy(inputs).unsqueeze(0)).cpu().numpy()[0]
+                for offset, predicted_normalized in enumerate(predictions):
+                    point = segment[target_start + offset]
+                    observed = float(getattr(point, value_attribute))
+                    predicted = float(predicted_normalized * bundle.scale + bundle.center)
+                    residual = observed - predicted
+                    threshold = bundle.positive_threshold if residual >= 0 else bundle.negative_threshold
+                    if abs(residual) > threshold:
+                        events.append(self._event(
+                            point, signal_name, observed, predicted, residual, threshold,
+                            lookback_days, horizon_steps * interval_minutes,
+                        ))
+        return self._aggregate_events(events)
+
     def _detect_signal(
         self,
         series: Sequence[SeriesPoint],
@@ -154,6 +234,7 @@ class RNNForecastDetector(AnomalyDetector):
         signal_name: str,
         lookback_steps: int,
         horizon_steps: int,
+        calibration_points: Sequence[SeriesPoint] | None = None,
     ) -> _TrainedModel | None:
         segments = self._contiguous_segments(training_points, value_attribute)
         values = np.asarray([float(getattr(point, value_attribute)) for point in training_points], dtype=np.float64)
@@ -164,10 +245,47 @@ class RNNForecastDetector(AnomalyDetector):
         if len(features) < self.minimum_training_windows:
             return None
 
+        if calibration_points is not None:
+            calibration_valid = [
+                point for point in calibration_points
+                if point.quality_flag == "ok" and getattr(point, value_attribute) is not None
+            ]
+            if not calibration_valid:
+                return None
+            calibration_history = self._contiguous_segments(
+                sorted(list(training_points) + calibration_valid, key=lambda point: point.timestamp),
+                value_attribute,
+            )
+            calibration_features, calibration_targets = self._windows(
+                calibration_history,
+                value_attribute,
+                lookback_steps,
+                horizon_steps,
+                center,
+                scale,
+                target_time_start=calibration_valid[0].timestamp,
+                target_time_end=calibration_valid[-1].timestamp,
+            )
+            train_features = features
+            train_targets = targets
+            if len(calibration_features) < 8:
+                return None
+        else:
+            validation_count = max(8, int(len(features) * self.validation_fraction))
+            training_end = len(features) - validation_count
+            if training_end < 16:
+                return None
+            train_features = features[:training_end]
+            train_targets = targets[:training_end]
+            calibration_features = features[training_end:]
+            calibration_targets = targets[training_end:]
+
         key_hash = hashlib.sha256()
         key_hash.update(f"{signal_name}:{lookback_steps}:{horizon_steps}:{center:.10g}:{scale:.10g}".encode())
-        key_hash.update(features.tobytes())
-        key_hash.update(targets.tobytes())
+        key_hash.update(train_features.tobytes())
+        key_hash.update(train_targets.tobytes())
+        key_hash.update(calibration_features.tobytes())
+        key_hash.update(calibration_targets.tobytes())
         key = key_hash.hexdigest()
         with self._cache_lock:
             cached = self._model_cache.get(key)
@@ -175,21 +293,19 @@ class RNNForecastDetector(AnomalyDetector):
                 self._model_cache.move_to_end(key)
                 return cached
 
-        validation_count = max(8, int(len(features) * self.validation_fraction))
-        training_end = len(features) - validation_count
-        if training_end < 16:
+        if len(train_features) < 16:
             return None
         torch.manual_seed(42)
         model = _LSTMForecaster(features.shape[-1], horizon_steps)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
         loss_function = nn.HuberLoss()
-        train_inputs = torch.from_numpy(features[:training_end])
-        train_targets = torch.from_numpy(targets[:training_end])
+        train_inputs = torch.from_numpy(train_features)
+        torch_targets = torch.from_numpy(train_targets)
         for _ in range(self.epochs):
             model.train()
-            for offset in range(0, training_end, self.batch_size):
+            for offset in range(0, len(train_features), self.batch_size):
                 batch_inputs = train_inputs[offset:offset + self.batch_size]
-                batch_targets = train_targets[offset:offset + self.batch_size]
+                batch_targets = torch_targets[offset:offset + self.batch_size]
                 optimizer.zero_grad()
                 loss = loss_function(model(batch_inputs), batch_targets)
                 loss.backward()
@@ -197,8 +313,8 @@ class RNNForecastDetector(AnomalyDetector):
 
         model.eval()
         with torch.inference_mode():
-            validation_predictions = model(torch.from_numpy(features[training_end:])).numpy()
-        residuals = targets[training_end:] - validation_predictions
+            validation_predictions = model(torch.from_numpy(calibration_features)).numpy()
+        residuals = calibration_targets - validation_predictions
         # Median +/- 3 MAD is a robust, compact alternative, but assumes a
         # roughly symmetric residual tail and can miss skewed forecast errors.
         # The empirical 99th percentile adapts to the held-out tail, provided
@@ -232,23 +348,34 @@ class RNNForecastDetector(AnomalyDetector):
         horizon_steps: int,
         center: float,
         scale: float,
+        target_time_start: datetime | None = None,
+        target_time_end: datetime | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         feature_windows: list[list[list[float]]] = []
         target_windows: list[list[float]] = []
-        possible_windows = sum(
-            max(0, len(segment) - lookback_steps - horizon_steps + 1)
-            for segment in segments
-        )
+        possible_windows = 0
+        for segment in segments:
+            for start in range(lookback_steps, len(segment) - horizon_steps + 1):
+                target = segment[start:start + horizon_steps]
+                if target_time_start is not None and target[0].timestamp < target_time_start:
+                    continue
+                if target_time_end is not None and target[-1].timestamp > target_time_end:
+                    continue
+                possible_windows += 1
         stride = max(1, math.ceil(possible_windows / RNNForecastDetector.max_training_windows))
         window_index = 0
         for segment in segments:
-            for target_start in range(lookback_steps, len(segment) - horizon_steps + 1):
+            for window_start in range(lookback_steps, len(segment) - horizon_steps + 1):
+                target = segment[window_start:window_start + horizon_steps]
+                if target_time_start is not None and target[0].timestamp < target_time_start:
+                    continue
+                if target_time_end is not None and target[-1].timestamp > target_time_end:
+                    continue
                 include_window = window_index % stride == 0
                 window_index += 1
                 if not include_window:
                     continue
-                context = segment[target_start - lookback_steps:target_start]
-                target = segment[target_start:target_start + horizon_steps]
+                context = segment[window_start - lookback_steps:window_start]
                 feature_windows.append([
                     cls._features(point, value_attribute, center, scale) for point in context
                 ])

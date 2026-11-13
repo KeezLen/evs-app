@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+import event_detection.api.app as api_module
 from event_detection.api.app import app
 
 
@@ -115,3 +116,46 @@ def test_rnn_summary_rejects_daily_resolution():
 
     assert response.status_code == 400
     assert "hourly and 15-minute" in response.json()["detail"]
+
+
+def test_benchmark_runs_selected_household_with_weather_audit():
+    response = TestClient(app).post(
+        "/benchmark",
+        json={
+            "dataset": "zonnedael",
+            "household": "Klant 34",
+            "patterns": ["spikes"],
+            "seed": 13,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["weather_audit"]["weather_gas_enabled"] is True
+    result = body["results"][0]
+    assert result["household"] == "Klant 34"
+    assert {method["method"] for method in result["methods"] if method["applicable"]} == {
+        "rules", "isolation_forest"
+    }
+
+
+def test_all_household_benchmark_queues_progress_job(monkeypatch):
+    monkeypatch.setattr(
+        api_module,
+        "run_household_benchmark",
+        lambda dataset, household, patterns, seed, weather_gas_enabled, lookback_days, strengths: {
+            "household": household,
+            "methods": [],
+        },
+    )
+    client = TestClient(app)
+    started = client.post("/benchmark", json={"dataset": "zonnedael", "all_households": True})
+
+    assert started.status_code == 200
+    job_id = started.json()["job_id"]
+    status = client.get(f"/benchmark/jobs/{job_id}")
+
+    assert status.status_code == 200
+    assert status.json()["total_households"] == 58
+    assert status.json()["status"] in {"queued", "running", "completed"}
