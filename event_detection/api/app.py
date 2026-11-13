@@ -39,6 +39,25 @@ def _get_detector(module: str, method: str):
     return _ANOMALY_DETECTORS[method]
 
 
+def _detector_points(
+    dataset: str,
+    household: str,
+    module: str,
+    range_end: datetime | None,
+    range_start: datetime | None,
+):
+    """Load preceding history for anomaly detection windows when available."""
+    if module == "anomaly" and range_start is not None:
+        return get_series(dataset, household, range_end=range_end)
+    return get_series(dataset, household, range_start, range_end)
+
+
+def _detect_with_window(detector, points, module: str, detection_start: datetime | None):
+    if module == "anomaly" and detection_start is not None:
+        return detector.detect(points, detection_start=detection_start)
+    return detector.detect(points)
+
+
 @app.get("/")
 def root():
     """Small landing response for a browser or service health check."""
@@ -75,7 +94,13 @@ def series(
 def detect(request: DetectRequest):
     """Run the selected detector for one household and date range."""
     try:
-        points = get_series(request.dataset, request.household, request.range_start, request.range_end)
+        points = _detector_points(
+            request.dataset,
+            request.household,
+            request.module,
+            request.range_end,
+            request.range_start,
+        )
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     try:
@@ -83,7 +108,7 @@ def detect(request: DetectRequest):
     except KeyError as error:
         detail = "Unknown NILM method" if request.module == "nilm" else "Unknown anomaly method"
         raise HTTPException(status_code=400, detail=detail) from error
-    return detector.detect(points)
+    return _detect_with_window(detector, points, request.module, request.range_start)
 
 
 @app.get("/event-summary")
@@ -97,7 +122,7 @@ def event_summary(
 ):
     """Return detector results together with compact data-quality statistics."""
     try:
-        points = get_series(dataset, household, range_start, range_end)
+        points = _detector_points(dataset, household, module, range_end, range_start)
         detector = _get_detector(module, method)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -105,7 +130,7 @@ def event_summary(
         detail = "Unknown NILM method" if module == "nilm" else "Unknown anomaly method"
         raise HTTPException(status_code=400, detail=detail) from error
 
-    events = detector.detect(points)
+    events = _detect_with_window(detector, points, module, range_start)
     event_counts = Counter(event.type for event in events)
     quality_counts = Counter(point.quality_flag for point in points)
     test_split = None
@@ -116,6 +141,16 @@ def event_summary(
             if point.quality_flag == "ok" and point.electricity_kwh is not None
         ]
         training_count = int(len(electricity_points) * detector.training_ratio)
+        if range_start is not None:
+            requested_training_count = next(
+                (index for index, point in enumerate(electricity_points) if point.timestamp >= range_start),
+                len(electricity_points),
+            )
+            if (
+                requested_training_count >= detector.minimum_samples
+                and requested_training_count < len(electricity_points)
+            ):
+                training_count = requested_training_count
         if training_count < len(electricity_points):
             test_split = {
                 "timestamp": electricity_points[training_count].timestamp,
@@ -201,7 +236,7 @@ def evaluate(request: EvaluationRequest):
             event.model_copy(update={"type": event_type_map.get(event.type, event.type)})
             for event in ground_truth
         ]
-    detected = detector.detect(points)
+    detected = _detect_with_window(detector, points, request.module, request.range_start)
     event_types = sorted({event.type for event in detected} | {event.type for event in ground_truth})
     metrics = []
     for event_type in event_types:

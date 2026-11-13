@@ -34,6 +34,18 @@ def test_isolation_forest_uses_provisional_chronological_defaults():
     assert detector.contamination == 0.01
 
 
+def test_isolation_forest_uses_history_before_requested_detection_window():
+    series = _series_with_electricity_spike()
+    detection_start = datetime(2026, 2, 12)
+
+    events = IsolationForestAnomalyDetector(contamination=0.05).detect(
+        series,
+        detection_start=detection_start,
+    )
+
+    assert all(event.start >= detection_start for event in events)
+
+
 def test_isolation_forest_ignores_invalid_points_and_short_history():
     series = _series_with_electricity_spike()
     series[45] = series[45].model_copy(update={"quality_flag": "partial"})

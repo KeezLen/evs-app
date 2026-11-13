@@ -30,7 +30,9 @@ It is a separate analyst view for full-resolution data: the detector processes
 all selected readings, while the chart uses spike-preserving downsampling and
 the table shows merged event windows. It defaults to the 15-minute electricity
 dataset and includes quality counts, event duration, detector selection, and
-date filtering.
+date filtering. The selected date range is the detection window; Isolation
+Forest automatically uses earlier available household readings as training
+history when enough data exists.
 
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose

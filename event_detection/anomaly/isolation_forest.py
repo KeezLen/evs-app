@@ -1,6 +1,7 @@
 """Isolation Forest detector for unusual household consumption."""
 
 from collections.abc import Sequence
+from datetime import datetime
 from datetime import timedelta
 import math
 
@@ -36,11 +37,15 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
         self.random_state = random_state
         self.n_estimators = n_estimators
 
-    def detect(self, series: Sequence[SeriesPoint]) -> list[Event]:
+    def detect(
+        self,
+        series: Sequence[SeriesPoint],
+        detection_start: datetime | None = None,
+    ) -> list[Event]:
         """Fit per-signal models and return anomalous valid observations."""
         events: list[Event] = []
         for signal_name in ("electricity", "gas"):
-            signal_events = self._detect_signal(series, signal_name)
+            signal_events = self._detect_signal(series, signal_name, detection_start)
             events.extend(signal_events)
         return sorted(events, key=lambda event: event.start)
 
@@ -48,6 +53,7 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
         self,
         series: Sequence[SeriesPoint],
         signal_name: str,
+        detection_start: datetime | None = None,
     ) -> list[Event]:
         value_attribute = "electricity_kwh" if signal_name == "electricity" else "gas_m3"
         points = [
@@ -56,6 +62,13 @@ class IsolationForestAnomalyDetector(AnomalyDetector):
             if point.quality_flag == "ok" and getattr(point, value_attribute) is not None
         ]
         training_count = int(len(points) * self.training_ratio)
+        if detection_start is not None:
+            requested_split = next(
+                (index for index, point in enumerate(points) if point.timestamp >= detection_start),
+                len(points),
+            )
+            if requested_split >= self.minimum_samples and requested_split < len(points):
+                training_count = requested_split
         if training_count < self.minimum_samples or training_count >= len(points):
             return []
 
