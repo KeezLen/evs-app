@@ -111,6 +111,7 @@ def summarize_benchmark_events(
     ground_truth: Sequence[Event],
     test_duration_hours: float,
     tolerance_minutes: int,
+    protocol: str = "corrected_v2",
 ) -> dict[str, object]:
     """Return class metrics, injection sensitivity, false alarms, delay and overlap."""
     matching = match_event_windows(detected, ground_truth, tolerance_minutes)
@@ -136,15 +137,20 @@ def summarize_benchmark_events(
         false_positives = detected_count - matched_count
         false_negatives = truth_count - matched_count
         total_false_alarms += false_positives
-        precision = matched_count / detected_count if detected_count else 0.0
-        recall = matched_count / truth_count if truth_count else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        precision = matched_count / detected_count if detected_count else None
+        recall = matched_count / truth_count if truth_count else None
+        if protocol == "legacy_v1":
+            precision = precision if precision is not None else 0.0
+            recall = recall if recall is not None else 0.0
+            f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        else:
+            f1 = 2 * matched_count / (detected_count + truth_count) if detected_count + truth_count else None
         class_metrics.append({
             "signal": signal,
             "direction": direction,
-            "precision": round(precision, 4),
-            "recall": round(recall, 4),
-            "f1": round(f1, 4),
+            "precision": round(precision, 4) if precision is not None else None,
+            "recall": round(recall, 4) if recall is not None else None,
+            "f1": round(f1, 4) if f1 is not None else None,
             "detected": detected_count,
             "ground_truth": truth_count,
             "matched": matched_count,

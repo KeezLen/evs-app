@@ -46,6 +46,10 @@ th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacin
 .badge.low { background:#fff2cf; color:#765600; }
 .empty { color:var(--muted); padding:22px 14px; }
 .detail-controls { display:grid; grid-template-columns:minmax(200px,330px) 1fr; gap:12px; align-items:end; padding:0 16px 12px; }
+.saved-controls { display:flex; flex-wrap:wrap; align-items:end; gap:8px; padding:0 16px 12px; }
+.saved-controls select { flex:1 1 320px; }
+.saved-controls button { width:auto; }
+.saved-status { align-self:center; color:var(--muted); font-size:12px; }
 .timeline-wrap { overflow-x:auto; padding:0 16px 16px; }
 svg { display:block; min-width:720px; width:100%; height:240px; background:var(--canvas); border-radius:6px; }
 .axis { stroke:#aabaae; stroke-width:1; }
@@ -56,7 +60,7 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
 .disclaimer { font-size:12px; color:var(--muted); line-height:1.5; margin:12px 2px 0; }
 [hidden] { display:none !important; }
 @media (max-width:950px) { .controls{grid-template-columns:repeat(3,minmax(120px,1fr));} header{display:block;} .status{margin-top:12px;} }
-@media (max-width:600px) { main{width:calc(100% - 18px);padding-top:16px;} .controls{grid-template-columns:1fr 1fr;} .actions{grid-column:span 2;} .section-head{display:block;} .note{margin-top:5px;} .detail-controls{grid-template-columns:1fr;} }
+@media (max-width:600px) { main{width:calc(100% - 18px);padding-top:16px;} .controls{grid-template-columns:1fr 1fr;} .actions{grid-column:span 2;} .section-head{display:block;} .note{margin-top:5px;} .detail-controls{grid-template-columns:1fr;} .saved-controls select,.saved-controls button{width:100%;} }
 </style>
 </head>
 <body>
@@ -71,6 +75,7 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
     <label id="household-label">Household<select id="household"></select></label>
     <label>Lookback<select id="lookback"><option value="1">24 hours</option><option value="7">7 days</option></select></label>
     <label>Random seed<input id="seed" type="number" min="0" value="17"></label>
+    <label>Protocol<select id="protocol"><option value="corrected_v2">Corrected v2</option><option value="legacy_v1">Legacy v1</option></select></label>
     <div class="actions"><button id="run">Run benchmark</button></div>
     <div class="patterns" aria-label="Injected event patterns">
       <label class="pattern"><input type="checkbox" value="spikes" checked><span>Short high spikes</span></label>
@@ -92,26 +97,40 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
   </section>
 
   <p id="audit" class="audit">Checking weather/gas alignment...</p>
+  <section class="panel section">
+    <div class="section-head"><h2>Saved runs</h2><p class="note">Completed runs are saved in the project’s benchmark_results folder and remain available after API restarts.</p></div>
+    <div class="saved-controls">
+      <label for="saved-runs">Available results<select id="saved-runs"><option value="">No saved runs loaded</option></select></label>
+      <button id="open-saved" class="secondary" disabled>Open saved run</button>
+      <button id="refresh-saved" class="secondary">Refresh list</button>
+      <button id="save-current" disabled>Save displayed result</button>
+      <span id="saved-status" class="saved-status" aria-live="polite">No result selected.</span>
+    </div>
+  </section>
   <section id="progress-panel" class="panel progress-wrap" hidden>
     <div class="progress-top"><strong id="progress-label">Benchmark queued</strong><span id="progress-count">0 / 0</span></div>
     <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
   </section>
 
   <section class="panel section">
-    <div class="section-head"><h2>Aggregate comparison</h2><p class="note">Macro-average across households with a metric for that event type; each household has equal weight.</p></div>
-    <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Direction</th><th>Homes</th><th>Precision</th><th>Recall</th><th>F1</th><th>Unmatched injected</th><th>No-injection alerts/week</th></tr></thead><tbody id="aggregate"><tr><td class="empty" colspan="9">Run a benchmark to see method results.</td></tr></tbody></table></div>
+    <div class="section-head"><h2>Aggregate comparison</h2><p class="note">No-alert is a negative control. Random controls use each detector's untouched-test alert budget, with seeded random placement. These synthetic-label comparisons are references, not verified real-world false-alarm rates.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Direction</th><th>Homes</th><th>Matched / detected / injected</th><th>Precision (homes)</th><th>Recall (homes)</th><th>F1 (homes)</th><th>Unmatched injected</th><th>No-injection alerts/week</th></tr></thead><tbody id="aggregate"><tr><td class="empty" colspan="10">Run a benchmark to see method results.</td></tr></tbody></table></div>
   </section>
 
   <section class="panel section">
     <div class="section-head"><h2>Household results</h2><p class="note">Inspect the selected home, including event-level scoring.</p></div>
     <div class="detail-controls"><label>Household results<select id="result-household" disabled></select></label><p id="household-summary" class="note">No run completed yet.</p></div>
+    <div class="section-head"><h2>Detector support</h2><p class="note">Sufficient support means configured minimum data/window counts were met; it does not guarantee a useful model fit.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Status</th><th>Train points</th><th>Calibration points</th><th>Test points</th><th>Train windows</th><th>Calibration windows</th><th>Test windows</th></tr></thead><tbody id="support-diagnostics"><tr><td class="empty" colspan="9">No run completed yet.</td></tr></tbody></table></div>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Direction</th><th>Precision</th><th>Recall</th><th>F1</th><th>Detected</th><th>Injected</th><th>Unmatched injected</th><th>No-injection alerts</th><th>Runtime</th></tr></thead><tbody id="household-metrics"><tr><td class="empty" colspan="11">Run a benchmark to see household results.</td></tr></tbody></table></div>
     <div class="section-head"><h2>Injected and detected windows</h2><p class="note">Gold: injected truth. Red/blue: detector output. Select a method to inspect its windows.</p></div>
     <div class="detail-controls"><label>Detector<select id="timeline-method" disabled></select></label><p id="timeline-summary" class="note"></p></div>
     <div class="timeline-wrap"><svg id="timeline" viewBox="0 0 1200 240" role="img" aria-label="Injected truth and detected benchmark event windows"><text class="axis-label" x="20" y="34">Run a benchmark to view event windows.</text></svg></div>
+    <div class="section-head"><h2>Injection details</h2><p id="skipped-summary" class="note"></p></div>
+    <div class="table-wrap"><table><thead><tr><th>Start</th><th>Pattern</th><th>Signal</th><th>Requested</th><th>Original total</th><th>Injected total</th><th>Change</th></tr></thead><tbody id="injection-details"><tr><td class="empty" colspan="7">No injections yet.</td></tr></tbody></table></div>
   </section>
 
-  <p class="disclaimer">The test set is chronological and held out from training and calibration. Injected patterns test controlled sensitivity and false alarms; they do not prove real appliance-level accuracy. De Bilt weather is a regional proxy for Zonnedael, whose exact location is unknown.</p>
+  <p class="disclaimer">Injected patterns test controlled sensitivity, not real appliance-level accuracy. Unmatched alerts may be natural events and are not verified false alarms. Legacy v1 can mislabel low-use and warm-weather injections; historical screenshots are not recreated. De Bilt weather is a regional proxy for Zonnedael, whose exact location is unknown.</p>
 </main>
 <script>
 const API = window.EVS_EVENT_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -119,6 +138,7 @@ const $ = (id) => document.getElementById(id);
 let datasets = [];
 let weatherAudit = null;
 let benchmarkResponse = null;
+let currentSavedResultId = null;
 
 function setStatus(message, error = false) {
   $('status').textContent = message;
@@ -127,7 +147,29 @@ function setStatus(message, error = false) {
 function escapeHtml(value) {
   return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-function pct(value) { return Math.round((value || 0) * 100) + '%'; }
+function methodLabel(value) {
+  if (value === 'no_alert') return 'No alerts (control)';
+  if (value.startsWith('random_budget_')) return 'Random at ' + value.slice('random_budget_'.length) + ' alert budget';
+  return value;
+}
+function renderSavedRuns(rows) {
+  const select = $('saved-runs');
+  const selected = select.value;
+  select.innerHTML = '<option value="">Select a saved run</option>' + rows.map((row) => {
+    const label = [row.saved_at, row.dataset, row.protocol, row.households_completed + '/' + row.households_requested + ' homes'].filter(Boolean).join(' · ');
+    return '<option value="' + escapeHtml(row.id) + '">' + escapeHtml(label) + '</option>';
+  }).join('');
+  if (rows.some((row) => row.id === selected)) select.value = selected;
+  $('open-saved').disabled = !select.value;
+}
+async function refreshSavedRuns() {
+  const response = await fetch(API + '/benchmark/saved');
+  if (!response.ok) throw new Error('Saved runs HTTP ' + response.status);
+  const rows = await response.json();
+  renderSavedRuns(rows);
+  $('saved-status').textContent = rows.length + ' saved run' + (rows.length === 1 ? '' : 's');
+}
+function pct(value) { return value == null ? 'N/A' : (value * 100).toFixed(1) + '%'; }
 function selectedPatterns() {
   return [...document.querySelectorAll('.patterns[aria-label="Injected event patterns"] input[type="checkbox"][value]:checked')].map((input) => input.value);
 }
@@ -168,7 +210,7 @@ async function loadWeatherAudit() {
   $('audit').innerHTML = '<strong>Weather audit: ' + (enabled ? 'ready' : 'limited') + '.</strong> Hourly/daily temperature coverage ' + pct(weatherAudit.hourly_temperature_coverage) + ' / ' + pct(dailyTemperatureCoverage) + '; date alignment ' + pct(weatherAudit.date_alignment) + '; hourly gas coverage ' + pct(weatherAudit.hourly_gas_coverage) + '; gas totals within 0.001 m3 on ' + pct(weatherAudit.gas_reconciliation_ratio) + ' of comparable days. Mean daily/hourly temperature difference ' + weatherAudit.mean_daily_vs_hourly_temperature_difference_c + ' C. De Bilt remains a proxy for an unknown location.';
 }
 function renderAggregate(rows) {
-  $('aggregate').innerHTML = rows.length ? rows.map((row) => '<tr><td><strong>' + escapeHtml(row.method) + '</strong></td><td>' + escapeHtml(row.signal) + '</td><td>' + escapeHtml(row.direction) + '</td><td>' + row.households + '</td><td>' + pct(row.macro_precision) + '</td><td>' + pct(row.macro_recall) + '</td><td class="metric-good">' + pct(row.macro_f1) + '</td><td>' + row.mean_unmatched_injected_events + '</td><td>' + row.mean_no_injection_events_per_week + '</td></tr>').join('') : '<tr><td colspan="9" class="empty">No scored event classes in this result.</td></tr>';
+  $('aggregate').innerHTML = rows.length ? rows.map((row) => '<tr><td><strong>' + escapeHtml(methodLabel(row.method)) + '</strong></td><td>' + escapeHtml(row.signal) + '</td><td>' + escapeHtml(row.direction) + '</td><td>' + row.households + '</td><td>' + row.matched + ' / ' + row.detected + ' / ' + row.ground_truth + '</td><td>' + pct(row.macro_precision) + ' (' + row.precision_households + ')</td><td>' + pct(row.macro_recall) + ' (' + row.recall_households + ')</td><td class="metric-good">' + pct(row.macro_f1) + ' (' + row.f1_households + ')</td><td>' + row.mean_unmatched_injected_events + '</td><td>' + row.mean_no_injection_events_per_week + '</td></tr>').join('') : '<tr><td colspan="10" class="empty">No scored event classes in this result.</td></tr>';
 }
 function renderHousehold(result) {
   if (!result) return;
@@ -181,11 +223,26 @@ function renderHousehold(result) {
     for (const metric of method.scores.classes) {
       const normalMetric = method.normal_scores.classes.find((item) => item.signal === metric.signal && item.direction === metric.direction);
       const normalRate = normalMetric ? normalMetric.alerts_per_household_week : 0;
-      rows.push('<tr><td>' + escapeHtml(method.method) + '</td><td>' + escapeHtml(metric.signal) + '</td><td>' + escapeHtml(metric.direction) + '</td><td>' + pct(metric.precision) + '</td><td>' + pct(metric.recall) + '</td><td class="metric-good">' + pct(metric.f1) + '</td><td>' + metric.detected + '</td><td>' + metric.ground_truth + '</td><td>' + metric.false_positives + '</td><td>' + normalRate + '/week</td><td>' + method.runtime_ms + ' ms</td></tr>');
+      rows.push('<tr><td>' + escapeHtml(methodLabel(method.method)) + '</td><td>' + escapeHtml(metric.signal) + '</td><td>' + escapeHtml(metric.direction) + '</td><td>' + pct(metric.precision) + '</td><td>' + pct(metric.recall) + '</td><td class="metric-good">' + pct(metric.f1) + '</td><td>' + metric.detected + '</td><td>' + metric.ground_truth + '</td><td>' + metric.false_positives + '</td><td>' + normalRate + '/week</td><td>' + method.runtime_ms + ' ms</td></tr>');
     }
   }
   $('household-metrics').innerHTML = rows.join('') || '<tr><td colspan="11" class="empty">No event classes to score.</td></tr>';
-  $('household-summary').textContent = result.household + ' · ' + result.resolution_minutes + ' min · train/calibration/test: ' + result.point_counts.training + ' / ' + result.point_counts.calibration + ' / ' + result.point_counts.test + ' readings';
+  $('household-summary').textContent = result.household + ' · ' + result.protocol + ' · seed ' + result.seed + ' · ' + result.resolution_minutes + ' min · train/calibration/test: ' + result.point_counts.training + ' / ' + result.point_counts.calibration + ' / ' + result.point_counts.test + ' readings';
+  const supportRows = [];
+  for (const [method, signals] of Object.entries(result.detector_support || {})) {
+    for (const [signal, support] of Object.entries(signals)) {
+      supportRows.push('<tr><td>' + escapeHtml(methodLabel(method)) + '</td><td>' + escapeHtml(signal) + '</td><td>' + escapeHtml(support.status) + '</td><td>' + (support.training_points ?? 'N/A') + '</td><td>' + (support.calibration_points ?? 'N/A') + '</td><td>' + (support.test_points ?? 'N/A') + '</td><td>' + (support.training_windows ?? 'N/A') + '</td><td>' + (support.calibration_windows ?? 'N/A') + '</td><td>' + (support.test_windows ?? 'N/A') + '</td></tr>');
+    }
+  }
+  $('support-diagnostics').innerHTML = supportRows.join('') || '<tr><td class="empty" colspan="9">No support diagnostics available.</td></tr>';
+  const sum = (values) => values.reduce((total, value) => total + value, 0);
+  $('injection-details').innerHTML = result.ground_truth.map((event) => {
+    const original = sum(event.details.original_values);
+    const injected = sum(event.details.injected_values);
+    const unit = event.details.signal === 'electricity' ? ' kWh' : ' m3';
+    return '<tr><td>' + escapeHtml(event.start) + '</td><td>' + escapeHtml(event.details.pattern) + '</td><td>' + escapeHtml(event.details.signal) + '</td><td>' + escapeHtml(event.details.direction) + ' ' + pct(event.details.strength) + '</td><td>' + original.toFixed(3) + unit + '</td><td>' + injected.toFixed(3) + unit + '</td><td>' + (injected - original).toFixed(3) + unit + '</td></tr>';
+  }).join('') || '<tr><td class="empty" colspan="7">No injections generated.</td></tr>';
+  $('skipped-summary').textContent = result.skipped_injections.length ? 'Skipped: ' + result.skipped_injections.map((item) => item.pattern + ' ' + item.signal + (item.strength == null ? '' : ' ' + pct(item.strength)) + ': ' + item.reason).join('; ') : 'No injection cases skipped.';
   $('timeline-method').innerHTML = result.methods.filter((method) => method.applicable).map((method) => '<option value="' + escapeHtml(method.method) + '">' + escapeHtml(method.method) + '</option>').join('');
   $('timeline-method').disabled = result.methods.every((method) => !method.applicable);
   drawTimeline(result, $('timeline-method').value);
@@ -207,14 +264,48 @@ function drawTimeline(result, methodName) {
   const matched = method.scores.matching.matched;
   $('timeline-summary').textContent = matched + ' / ' + truth.length + ' injected events matched · ' + detected.length + ' total detections';
 }
-function renderResult(response) {
+function renderResult(response, savedId = null) {
   benchmarkResponse = response;
+  currentSavedResultId = savedId || response.saved_result_id || response.id || null;
+  $('save-current').disabled = !response.results?.length || Boolean(currentSavedResultId);
+  $('save-current').textContent = currentSavedResultId ? 'Result saved' : 'Save displayed result';
+  $('saved-status').textContent = currentSavedResultId ? 'Saved result ' + currentSavedResultId : 'This displayed result is not saved yet.';
   renderAggregate(response.aggregate || []);
   const results = response.results || [];
   const select = $('result-household');
   select.innerHTML = results.map((result,index) => '<option value="' + index + '">' + escapeHtml(result.household) + '</option>').join('');
   select.disabled = results.length <= 1;
   renderHousehold(results[0]);
+}
+async function saveDisplayedRun() {
+  if (!benchmarkResponse || !benchmarkResponse.results?.length) return;
+  $('save-current').disabled = true;
+  try {
+    const response = await fetch(API + '/benchmark/saved', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({result:benchmarkResponse}),
+    });
+    if (!response.ok) throw new Error('Save failed: ' + (await response.text()).slice(0,200));
+    const saved = await response.json();
+    currentSavedResultId = saved.id;
+    $('save-current').textContent = 'Result saved';
+    $('saved-status').textContent = 'Saved result ' + saved.id;
+    await refreshSavedRuns();
+    setStatus('Displayed benchmark result saved.');
+  } catch (error) {
+    $('save-current').disabled = false;
+    setStatus(error.message, true);
+  }
+}
+async function openSavedRun() {
+  const resultId = $('saved-runs').value;
+  if (!resultId) return;
+  const response = await fetch(API + '/benchmark/saved/' + encodeURIComponent(resultId));
+  if (!response.ok) throw new Error('Saved result HTTP ' + response.status);
+  const saved = await response.json();
+  renderResult(saved.result, saved.id);
+  $('saved-status').textContent = 'Opened saved result ' + saved.id;
+  setStatus('Saved benchmark result loaded.');
 }
 async function pollJob(jobId) {
   $('progress-panel').hidden = false;
@@ -250,6 +341,7 @@ async function runBenchmark() {
     strengths,
     seed: Number($('seed').value || 17),
     lookback_days: Number($('lookback').value),
+    protocol: $('protocol').value,
   };
   try {
     const response = await fetch(API + '/benchmark', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
@@ -257,6 +349,9 @@ async function runBenchmark() {
     const result = await response.json();
     if (result.job_id) await pollJob(result.job_id);
     else { $('progress-label').textContent = 'Benchmark complete'; $('progress-count').textContent = '1 / 1'; $('progress-fill').style.width = '100%'; renderResult(result); setStatus('Benchmark complete.'); }
+    await refreshSavedRuns();
+    const completed = result.job_id ? benchmarkResponse : result;
+    if (completed?.save_error) setStatus('Benchmark complete, but saving failed: ' + completed.save_error, true);
   } catch (error) { setStatus(error.message, true); }
   finally { $('run').disabled = false; }
 }
@@ -269,6 +364,7 @@ async function boot() {
     $('dataset').value = 'zonnedael_hourly';
     updateHouseholds();
     await loadWeatherAudit();
+    await refreshSavedRuns();
     updateStrengthControls();
     setStatus('Ready to run a detector comparison.');
   } catch (error) { setStatus('Backend unavailable: ' + error.message, true); }
@@ -280,6 +376,10 @@ $('weather-pattern').addEventListener('change', updateStrengthControls);
 document.querySelectorAll('.patterns[aria-label="Injected event patterns"] input').forEach((input) => input.addEventListener('change', updateStrengthControls));
 $('all-households').addEventListener('change', () => { $('household-label').hidden = $('all-households').checked; });
 $('run').addEventListener('click', runBenchmark);
+$('save-current').addEventListener('click', saveDisplayedRun);
+$('refresh-saved').addEventListener('click', () => refreshSavedRuns().catch(error => setStatus(error.message,true)));
+$('saved-runs').addEventListener('change', () => { $('open-saved').disabled = !$('saved-runs').value; });
+$('open-saved').addEventListener('click', () => openSavedRun().catch(error => setStatus(error.message,true)));
 $('result-household').addEventListener('change', () => renderHousehold(benchmarkResponse?.results?.[Number($('result-household').value)]));
 $('timeline-method').addEventListener('change', () => { const result=benchmarkResponse?.results?.[Number($('result-household').value)] || benchmarkResponse?.results?.[0]; if(result) drawTimeline(result,$('timeline-method').value); });
 boot();

@@ -101,18 +101,29 @@ def generate_benchmark_cases(
     seed: int,
     weather_gas_enabled: bool,
     strengths: Sequence[float] | None = None,
+    protocol: str = "corrected_v2",
+    skipped: list[dict] | None = None,
 ) -> tuple[list[SeriesPoint], list[Event]]:
     """Return a perturbed test copy and labeled injections, never mutating source points."""
+    if protocol not in {"legacy_v1", "corrected_v2"}:
+        raise ValueError(f"Unknown benchmark protocol: {protocol}")
     has_gas = any(point.gas_m3 is not None for point in partitions.training + partitions.test)
     selected_patterns = [
         pattern for pattern in patterns
         if pattern != "weather_gas" or (weather_gas_enabled and has_gas)
     ]
+    if skipped is not None and "weather_gas" in patterns and "weather_gas" not in selected_patterns:
+        skipped.append({"pattern": "weather_gas", "signal": "gas", "reason": "weather audit disabled" if has_gas else "no gas data"})
+    if skipped is not None and not has_gas:
+        skipped.extend({"pattern": pattern, "signal": "gas", "reason": "no gas data"} for pattern in selected_patterns)
     if not selected_patterns:
         return list(partitions.test), []
     specs = injection_specs(selected_patterns, has_gas, strengths)
     if not specs:
         raise ValueError("Selected event patterns and strengths do not produce any injections")
+    if skipped is not None:
+        spec_patterns = {"spikes" if spec.pattern == "spike" else spec.pattern for spec in specs}
+        skipped.extend({"pattern": pattern, "signal": "all", "reason": "no compatible selected strength"} for pattern in selected_patterns if pattern not in spec_patterns)
 
     interval_minutes = partitions.test[0].interval_minutes
     test = list(partitions.test)
@@ -126,19 +137,25 @@ def generate_benchmark_cases(
     for spec_index, spec in enumerate(specs):
         attribute = "electricity_kwh" if spec.signal == "electricity" else "gas_m3"
         duration_steps = max(1, math.ceil(spec.duration_hours * 60 / interval_minutes))
-        candidate_indices = [
-            start
-            for start in range(candidate_cursor, len(test) - duration_steps + 1)
-            if all(
-                test[index].quality_flag == "ok"
-                and getattr(test[index], attribute) is not None
-                and (index not in occupied)
-                for index in range(start, start + duration_steps)
+        def eligible(start: int) -> bool:
+            window = test[start:start + duration_steps]
+            return all(
+                point.quality_flag == "ok"
+                and getattr(point, attribute) is not None
+                and start + offset not in occupied
+                and (protocol == "legacy_v1" or spec.direction != "low" or getattr(point, attribute) > 0)
+                and (protocol == "legacy_v1" or (point.interval_minutes == interval_minutes
+                     and point.timestamp == window[0].timestamp + timedelta(minutes=interval_minutes * offset)))
+                for offset, point in enumerate(window)
             )
-        ]
+
+        candidate_indices = [start for start in range(candidate_cursor, len(test) - duration_steps + 1) if eligible(start)]
+        cold_cutoff = None
         if spec.pattern == "weather_gas":
-            hdds = [point.hdd18 for point in training if point.hdd18 is not None]
+            hdds = [point.hdd18 for point in training if point.hdd18 is not None and (protocol == "legacy_v1" or point.quality_flag == "ok")]
             if not hdds:
+                if skipped is not None:
+                    skipped.append({"pattern": spec.pattern, "signal": spec.signal, "strength": spec.strength, "reason": "no training weather"})
                 continue
             cold_cutoff = sorted(hdds)[int(0.75 * (len(hdds) - 1))]
             candidate_indices = [
@@ -150,14 +167,15 @@ def generate_benchmark_cases(
             candidate_indices = [
                 start
                 for start in range(0, len(test) - duration_steps + 1)
-                if all(
-                    test[index].quality_flag == "ok"
-                    and getattr(test[index], attribute) is not None
-                    and index not in occupied
+                if eligible(start)
+                and (protocol == "legacy_v1" or cold_cutoff is None or all(
+                    test[index].hdd18 is not None and test[index].hdd18 >= cold_cutoff
                     for index in range(start, start + duration_steps)
-                )
+                ))
             ]
         if not candidate_indices:
+            if skipped is not None:
+                skipped.append({"pattern": spec.pattern, "signal": spec.signal, "strength": spec.strength, "reason": "no eligible contiguous test window"})
             continue
 
         # Spread perturbations over the test period, while keeping each pattern reproducible.
@@ -165,20 +183,26 @@ def generate_benchmark_cases(
         candidate_start = candidate_indices[(desired + randomizer.randrange(min(3, len(candidate_indices)))) % len(candidate_indices)]
         baseline = _context_baseline(training, attribute, test[candidate_start], spec.pattern == "weather_gas")
         if baseline <= 0:
+            if skipped is not None:
+                skipped.append({"pattern": spec.pattern, "signal": spec.signal, "strength": spec.strength, "reason": "no positive training baseline"})
             continue
 
         changed: list[SeriesPoint] = []
+        originals: list[float] = []
+        changes: list[float] = []
         for index in range(candidate_start, candidate_start + duration_steps):
             point = test[index]
             original = float(getattr(point, attribute))
             if spec.direction == "low":
-                injected = max(0.0, baseline * (1.0 - spec.strength))
+                injected = max(0.0, (baseline if protocol == "legacy_v1" else original) * (1.0 - spec.strength))
             elif spec.pattern == "spike":
                 injected = max(original, baseline) * (1.0 + spec.strength)
             else:
                 injected = max(original, baseline) * (1.0 + spec.strength)
             changed_point = point.model_copy(update={attribute: injected})
             changed.append(changed_point)
+            originals.append(original)
+            changes.append(injected - original)
             occupied.add(index)
         test[candidate_start:candidate_start + duration_steps] = changed
         start_time = changed[0].timestamp
@@ -198,6 +222,9 @@ def generate_benchmark_cases(
                 "strength": spec.strength,
                 "duration_hours": duration_steps * interval_minutes / 60,
                 "requested_duration_hours": spec.duration_hours,
+                "original_values": originals,
+                "injected_values": [float(getattr(point, attribute)) for point in changed],
+                "realized_deltas": changes,
             },
         ))
         candidate_cursor = min(len(test) - duration_steps, candidate_start + duration_steps + max(1, duration_steps // 2))
@@ -239,6 +266,188 @@ def _context_baseline(
     return median(positive or values_only)
 
 
+def detector_support_diagnostics(
+    partitions: BenchmarkPartitions,
+    lookback_days: int,
+) -> dict[str, dict[str, dict[str, int | str]]]:
+    """Report data support and minimum-window eligibility by detector and signal."""
+    diagnostics: dict[str, dict[str, dict[str, int | str]]] = {
+        "rules": {},
+        "isolation_forest": {},
+        "rnn": {},
+    }
+    resolution = partitions.training[0].interval_minutes
+    isolation_forest = IsolationForestAnomalyDetector()
+    for signal in ("electricity", "gas"):
+        attribute = "electricity_kwh" if signal == "electricity" else "gas_m3"
+
+        def valid(points: Sequence[SeriesPoint]) -> list[SeriesPoint]:
+            return [point for point in points if point.quality_flag == "ok" and getattr(point, attribute) is not None]
+
+        training_points = valid(partitions.training)
+        calibration_points = valid(partitions.calibration)
+        test_points = valid(partitions.test)
+        if resolution != 1440:
+            rules_status = "unsupported_resolution"
+        elif signal == "gas":
+            gas_baseline_points = [point for point in training_points if point.hdd18 is not None]
+            rules_status = (
+                "sufficient_support"
+                if len(gas_baseline_points) >= RuleBasedDetector.minimum_gas_history
+                else "insufficient_gas_weather_history"
+            )
+        else:
+            rules_status = "sufficient_support" if training_points else "no_valid_training_data"
+        diagnostics["rules"][signal] = {
+            "status": rules_status,
+            "training_points": len(training_points),
+            "calibration_points": len(calibration_points),
+            "test_points": len(test_points),
+            "baseline_points": len(gas_baseline_points) if signal == "gas" and resolution == 1440 else len(training_points),
+        }
+
+        iforest_status = "sufficient_support"
+        if len(training_points) < isolation_forest.minimum_samples:
+            iforest_status = "insufficient_training_points"
+        elif len(calibration_points) < 10:
+            iforest_status = "insufficient_calibration_points"
+        elif not test_points:
+            iforest_status = "no_valid_test_points"
+        diagnostics["isolation_forest"][signal] = {
+            "status": iforest_status,
+            "training_points": len(training_points),
+            "calibration_points": len(calibration_points),
+            "test_points": len(test_points),
+        }
+
+        rnn: dict[str, int | str] = {
+            "status": "sufficient_support",
+            "training_points": len(training_points),
+            "calibration_points": len(calibration_points),
+            "test_points": len(test_points),
+            "lookback_days": lookback_days,
+            "training_windows": 0,
+            "calibration_windows": 0,
+            "test_windows": 0,
+        }
+        if resolution not in {15, 60}:
+            rnn["status"] = "unsupported_resolution"
+        elif not training_points or not calibration_points:
+            rnn["status"] = "missing_training_or_calibration_data"
+        else:
+            horizon_steps = 60 // resolution
+            lookback_steps = lookback_days * 1440 // resolution
+            training_segments = RNNForecastDetector._contiguous_segments(training_points, attribute)
+            training_windows = sum(
+                max(0, len(segment) - lookback_steps - horizon_steps + 1)
+                for segment in training_segments
+            )
+            rnn["training_windows"] = training_windows
+            if training_windows < RNNForecastDetector.minimum_training_windows:
+                rnn["status"] = "insufficient_training_windows"
+            elif not test_points:
+                rnn["status"] = "no_valid_test_points"
+            else:
+                test_start = test_points[0].timestamp
+                full_history = sorted(training_points + calibration_points + test_points, key=lambda point: point.timestamp)
+                full_segments = RNNForecastDetector._contiguous_segments(full_history, attribute)
+                test_windows = 0
+                for segment in full_segments:
+                    first_target = max(
+                        lookback_steps,
+                        next((index for index, point in enumerate(segment) if point.timestamp >= test_start), len(segment)),
+                    )
+                    test_windows += len(range(first_target, len(segment) - horizon_steps + 1, horizon_steps))
+                rnn["test_windows"] = test_windows
+                calibration_history = sorted(training_points + calibration_points, key=lambda point: point.timestamp)
+                calibration_segments = RNNForecastDetector._contiguous_segments(calibration_history, attribute)
+                calibration_start = calibration_points[0].timestamp
+                calibration_end = calibration_points[-1].timestamp
+                possible_calibration_windows = sum(
+                    1
+                    for segment in calibration_segments
+                    for start in range(lookback_steps, len(segment) - horizon_steps + 1)
+                    if segment[start].timestamp >= calibration_start
+                    and segment[start + horizon_steps - 1].timestamp <= calibration_end
+                )
+                stride = max(1, math.ceil(possible_calibration_windows / RNNForecastDetector.max_training_windows))
+                usable_calibration_windows = (
+                    math.ceil(possible_calibration_windows / stride)
+                    if possible_calibration_windows else 0
+                )
+                rnn["calibration_windows"] = usable_calibration_windows
+                if usable_calibration_windows < 8:
+                    rnn["status"] = "insufficient_calibration_windows"
+                elif not test_windows:
+                    rnn["status"] = "no_test_forecast_windows"
+        diagnostics["rnn"][signal] = rnn
+    return diagnostics
+
+
+def random_budget_events(
+    test: Sequence[SeriesPoint],
+    budget_events: Sequence[Event],
+    seed: int,
+) -> list[Event]:
+    """Place seeded random alerts in valid test windows at a reference alert budget."""
+    if not test:
+        return []
+    interval_minutes = test[0].interval_minutes
+    randomizer = random.Random(seed)
+    generated: list[Event] = []
+    segments_by_attribute: dict[str, list[tuple[int, int]]] = {}
+
+    def valid_segments(attribute: str) -> list[tuple[int, int]]:
+        if attribute in segments_by_attribute:
+            return segments_by_attribute[attribute]
+        segments: list[tuple[int, int]] = []
+        segment_start: int | None = None
+        for index, point in enumerate(test):
+            valid = point.quality_flag == "ok" and getattr(point, attribute) is not None
+            contiguous = (
+                segment_start is not None
+                and point.interval_minutes == interval_minutes
+                and point.timestamp == test[index - 1].timestamp + timedelta(minutes=interval_minutes)
+            )
+            if not valid or (segment_start is not None and not contiguous):
+                if segment_start is not None:
+                    segments.append((segment_start, index))
+                    segment_start = None
+            if valid and segment_start is None:
+                segment_start = index
+        if segment_start is not None:
+            segments.append((segment_start, len(test)))
+        segments_by_attribute[attribute] = segments
+        return segments
+
+    for event_index, budget_event in enumerate(budget_events):
+        signal = "gas" if "gas" in budget_event.type else "electricity"
+        attribute = "gas_m3" if signal == "gas" else "electricity_kwh"
+        duration_steps = max(1, math.ceil((budget_event.end - budget_event.start).total_seconds() / (interval_minutes * 60)))
+        segments = valid_segments(attribute)
+        candidate_count = sum(max(0, end - start - duration_steps + 1) for start, end in segments)
+        if not candidate_count:
+            continue
+        candidate_offset = randomizer.randrange(candidate_count)
+        start_index = 0
+        for segment_start, segment_end in segments:
+            segment_candidates = max(0, segment_end - segment_start - duration_steps + 1)
+            if candidate_offset < segment_candidates:
+                start_index = segment_start + candidate_offset
+                break
+            candidate_offset -= segment_candidates
+        start_point = test[start_index]
+        end_point = test[start_index + duration_steps - 1]
+        generated.append(budget_event.model_copy(update={
+            "id": f"random:{seed}:{event_index}:{start_point.timestamp.isoformat()}",
+            "start": start_point.timestamp,
+            "end": end_point.timestamp + timedelta(minutes=interval_minutes),
+            "method": "random_budget",
+            "details": {**budget_event.details, "random_control_seed": seed},
+        }))
+    return generated
+
+
 def run_household_benchmark(
     dataset: str,
     household: str,
@@ -247,16 +456,21 @@ def run_household_benchmark(
     weather_gas_enabled: bool,
     lookback_days: int = 1,
     strengths: Sequence[float] | None = None,
+    protocol: str = "corrected_v2",
 ) -> dict[str, object]:
     """Run normal and injected held-out data through all applicable detectors."""
     points = get_series(dataset, household)
     partitions = chronological_split(points)
+    diagnostics = detector_support_diagnostics(partitions, lookback_days)
+    skipped: list[dict] = []
     injected_test, truth = generate_benchmark_cases(
         partitions,
         patterns,
         seed,
         weather_gas_enabled,
         strengths,
+        protocol,
+        skipped,
     )
     resolution = points[0].interval_minutes
     duration_hours = (
@@ -274,6 +488,7 @@ def run_household_benchmark(
         applicable.append(("rnn", RNNForecastDetector()))
 
     method_results = []
+    detector_budgets: list[tuple[str, list[Event], dict]] = []
     tolerance = max(resolution, 15)
     for method, detector in applicable:
         started = perf_counter()
@@ -306,12 +521,14 @@ def run_household_benchmark(
             truth,
             duration_hours,
             tolerance,
+            protocol,
         )
         normal_scores = summarize_benchmark_events(
             normal_events,
             [],
             duration_hours,
             tolerance,
+            protocol,
         )
         normal_weeks = max(duration_hours / 168, 1 / 168)
         for normal_class in normal_scores["classes"]:
@@ -322,6 +539,7 @@ def run_household_benchmark(
         method_results.append({
             "method": method,
             "applicable": True,
+            "diagnostics": diagnostics[method],
             "runtime_ms": runtime_ms,
             "normal_event_count": len(normal_events),
             "normal_false_alarms_per_household_week": normal_scores["false_alarms_per_household_week"],
@@ -329,6 +547,40 @@ def run_household_benchmark(
             "injected_event_count": len(injected_events),
             "scores": injected_scores,
             "detected_events": injected_events,
+        })
+        detector_budgets.append((method, normal_events, normal_scores))
+
+    no_alert_scores = summarize_benchmark_events([], truth, duration_hours, tolerance, protocol)
+    method_results.append({
+        "method": "no_alert",
+        "applicable": True,
+        "baseline": True,
+        "runtime_ms": 0,
+        "normal_event_count": 0,
+        "normal_false_alarms_per_household_week": 0.0,
+        "normal_scores": {"classes": [], "false_alarms_per_household_week": 0.0},
+        "injected_event_count": 0,
+        "scores": no_alert_scores,
+        "detected_events": [],
+    })
+    for index, (method, budget_events, normal_scores) in enumerate(detector_budgets):
+        random_events = random_budget_events(partitions.test, budget_events, seed + index)
+        random_scores = summarize_benchmark_events(random_events, truth, duration_hours, tolerance, protocol)
+        method_results.append({
+            "method": f"random_budget_{method}",
+            "baseline": True,
+            "baseline_for": method,
+            "applicable": True,
+            "runtime_ms": 0,
+            "normal_event_count": len(budget_events),
+            "random_alert_budget": len(budget_events),
+            "random_alerts_generated": len(random_events),
+            "random_seed": seed + index,
+            "normal_false_alarms_per_household_week": normal_scores["false_alarms_per_household_week"],
+            "normal_scores": normal_scores,
+            "injected_event_count": len(random_events),
+            "scores": random_scores,
+            "detected_events": random_events,
         })
 
     if resolution == 1440:
@@ -351,6 +603,12 @@ def run_household_benchmark(
             "test_end": partitions.test[-1].timestamp,
         },
         "seed": seed,
+        "protocol": protocol,
+        "patterns": list(patterns),
+        "strengths": list(strengths) if strengths is not None else None,
+        "lookback_days": lookback_days,
+        "skipped_injections": skipped,
+        "detector_support": diagnostics,
         "weather_gas_enabled": weather_gas_enabled and any(event.details.get("pattern") == "weather_gas" for event in truth),
         "ground_truth": truth,
         "methods": method_results,

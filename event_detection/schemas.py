@@ -65,6 +65,7 @@ class EvaluationRequest(DetectRequest):
 
 class BenchmarkRequest(BaseModel):
     dataset: str
+    protocol: Literal["legacy_v1", "corrected_v2"] = "corrected_v2"
     household: str | None = "Klant 34"
     all_households: bool = False
     patterns: list[BenchmarkPattern] = Field(
@@ -73,6 +74,10 @@ class BenchmarkRequest(BaseModel):
     strengths: list[float] = Field(default_factory=lambda: [0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 2.0])
     seed: int = Field(default=17, ge=0)
     lookback_days: Literal[1, 7] = 1
+
+
+class SaveBenchmarkRequest(BaseModel):
+    result: dict[str, Any]
 
 
 class EvaluationMetric(BaseModel):

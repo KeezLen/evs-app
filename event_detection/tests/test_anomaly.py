@@ -34,6 +34,28 @@ def test_isolation_forest_uses_provisional_chronological_defaults():
     assert detector.contamination == 0.01
 
 
+def test_isolation_forest_imputes_heldout_weather_from_training_only():
+    detector = IsolationForestAnomalyDetector()
+    training = [
+        SeriesPoint(timestamp=datetime(2026, 1, 1) + timedelta(days=index),
+                    electricity_kwh=10, temp_mean_c=value, hdd18=value + 5,
+                    quality_flag="ok")
+        for index, value in enumerate((5.0, 15.0))
+    ]
+    heldout = [
+        SeriesPoint(timestamp=datetime(2026, 2, 1) + timedelta(days=index),
+                    electricity_kwh=10, temp_mean_c=None, hdd18=None,
+                    quality_flag="ok")
+        for index in range(2)
+    ]
+
+    training_medians = detector._context_medians(training)
+    features = detector._features(heldout, "electricity_kwh", training_medians)
+
+    assert features[:, 5].tolist() == [10.0, 10.0]
+    assert features[:, 6].tolist() == [15.0, 15.0]
+
+
 def test_isolation_forest_benchmark_scores_only_test_using_calibration():
     start = datetime(2026, 1, 1)
     series = [
