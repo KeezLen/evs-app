@@ -49,3 +49,57 @@ def test_profile_matches_existing_api_error_conventions():
     for dataset, household in [('zonnedael', 'Klant 1'), ('unknown', 'Klant 34')]:
         assert client.post('/profiles/build', json={'dataset': dataset, 'household': household}).status_code == 400
     assert client.post('/profiles/build', json={'dataset': 'zonnedael', 'household': 'Klant 34', 'home': {'floor_area_m2': -1}}).status_code == 422
+
+
+def test_profile_short_history_and_calendar_gaps():
+    from event_detection.evaluation.scenarios import load_scenario
+    short, _, _ = load_scenario('incomplete', 'Klant 34')
+    profile = build_profile(short, 'Klant 34')
+    assert profile['status'] == 'insufficient_history'
+    assert profile['fuels']['gas_m3']['status'] == 'insufficient_history'
+    assert profile['home']['woning_type'] is None
+    missing, _, _ = load_scenario('missing', 'Klant 34')
+    profile = build_profile(missing, 'Klant 34')
+    assert len(profile['data_quality']) == 8
+    assert sum(q['status'] == 'gap' for q in profile['data_quality']) == 2
+    assert profile['period']['calendar_days'] == 90
+    assert profile['fuels']['gas_m3']['valid_days'] == 83
+
+
+def test_hourly_profile_aggregates_days_not_rows_and_excludes_partial_fuel():
+    from datetime import timedelta
+    points = [SeriesPoint(timestamp=datetime(2013, 1, 1) + timedelta(hours=i),
+                interval_minutes=60, electricity_kwh=1, gas_m3=2,
+                quality_flag='ok', n_elec_intervals=4, n_gas_hours=1)
+              for i in range(48)]
+    points[3] = points[3].model_copy(update={'quality_flag': 'partial', 'gas_m3': None})
+    profile = build_profile(points, 'test')
+    assert profile['fuels']['electricity_kwh']['valid_days'] == 2
+    assert profile['fuels']['electricity_kwh']['mean_daily'] == 24
+    assert profile['fuels']['gas_m3']['valid_days'] == 1
+    assert profile['fuels']['gas_m3']['mean_daily'] == 48
+    assert profile['source_interval_minutes'] == 60
+    assert profile['data_quality'][0]['fuels'] == ['gas_m3']
+
+
+def test_quarter_hour_profile_does_not_invent_gas_or_scale_partial_day():
+    from datetime import timedelta
+    points = [SeriesPoint(timestamp=datetime(2013, 1, 1) + timedelta(minutes=15*i),
+                interval_minutes=15, electricity_kwh=0.25, quality_flag='ok')
+              for i in range(96)]
+    profile = build_profile(points, 'test')
+    assert profile['fuels']['electricity_kwh']['mean_daily'] == 24
+    assert profile['fuels']['gas_m3']['status'] == 'unavailable'
+    assert profile['data_quality'] == []
+    incomplete = build_profile(points[:-1], 'test')
+    assert incomplete['fuels']['electricity_kwh']['valid_days'] == 0
+    assert incomplete['fuels']['electricity_kwh']['mean_daily'] is None
+
+
+def test_duplicates_and_mixed_resolutions_are_rejected():
+    import pytest
+    p = SeriesPoint(timestamp=datetime(2013, 1, 1), quality_flag='ok')
+    with pytest.raises(ValueError, match='Duplicate'):
+        build_profile([p, p], 'test')
+    with pytest.raises(ValueError, match='resolution'):
+        build_profile([p, p.model_copy(update={'interval_minutes': 60})], 'test')

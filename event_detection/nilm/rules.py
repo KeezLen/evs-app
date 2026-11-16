@@ -23,12 +23,21 @@ class RuleBasedDetector(Detector):
     gas_delta_m3 = 4.0
     minimum_gas_history = 14
 
-    def detect(self, series: Sequence[SeriesPoint]) -> list[Event]:
+    def detect(
+        self,
+        series: Sequence[SeriesPoint],
+        reference_series: Sequence[SeriesPoint] | None = None,
+    ) -> list[Event]:
         """Compare valid readings with electricity and gas baselines."""
         valid = [point for point in series if point.quality_flag == "ok"]
+        reference = (
+            [point for point in reference_series if point.quality_flag == "ok"]
+            if reference_series is not None
+            else valid
+        )
         events: list[Event] = []
         electricity = [
-            point.electricity_kwh for point in valid if point.electricity_kwh is not None
+            point.electricity_kwh for point in reference if point.electricity_kwh is not None
         ]
         if electricity:
             baseline = median(electricity)
@@ -43,13 +52,15 @@ class RuleBasedDetector(Detector):
                     events.append(self._event(point, "high_electricity", value, baseline))
 
         gas_points = [
-            point for point in valid
+            point for point in reference
             if point.gas_m3 is not None and point.hdd18 is not None
         ]
         if len(gas_points) >= self.minimum_gas_history:
             # Heating degree days make cold-day gas use less surprising.
             intercept, slope = self._gas_baseline(gas_points)
-            for point in gas_points:
+            for point in valid:
+                if point.gas_m3 is None or point.hdd18 is None:
+                    continue
                 assert point.gas_m3 is not None and point.hdd18 is not None
                 baseline = max(0.0, intercept + slope * point.hdd18)
                 is_high = (

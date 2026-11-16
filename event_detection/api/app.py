@@ -1,26 +1,38 @@
 """Standalone HTTP API for event detection."""
 
 from collections import Counter
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+from threading import RLock
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from event_detection.product import analyze_household
 
 from event_detection.config import settings
 from event_detection.household_profile import build_profile
 from event_detection.data import available_datasets, get_series
 from event_detection.anomaly import IsolationForestAnomalyDetector, RNNForecastDetector
 from event_detection.evaluation.matching import match_events
+from event_detection.evaluation.benchmark import run_household_benchmark
 from event_detection.evaluation.scenarios import load_scenario
+from event_detection.evaluation.weather_audit import audit_weather_linkage
 from event_detection.nilm import detector_registry
 from event_detection.schemas import (
     ProfileRequest,
     ProfileResponse,
     DetectRequest,
+    BenchmarkRequest,
     EvaluationMetric,
     EvaluationRequest,
     EvaluationResponse,
+    SaveBenchmarkRequest,
 )
 
 app = FastAPI(title=settings.api_title)
@@ -35,6 +47,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+_BENCHMARK_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="event-benchmark")
+_BENCHMARK_JOBS: dict[str, dict] = {}
+_BENCHMARK_JOBS_LOCK = RLock()
+_BENCHMARK_RESULT_DIR = Path(__file__).resolve().parents[2] / "benchmark_results"
+
+
+def _persist_benchmark_result(result: dict, source: str) -> dict:
+    """Atomically store a completed benchmark result and return its index metadata."""
+    result_data = jsonable_encoder(result)
+    result_id = uuid4().hex
+    saved_at = datetime.now(timezone.utc).isoformat()
+    first_result = next(iter(result_data.get("results", [])), {})
+    record = {
+        "id": result_id,
+        "saved_at": saved_at,
+        "source": source,
+        "status": result_data.get("status", "completed"),
+        "dataset": result_data.get("dataset", first_result.get("dataset")),
+        "protocol": result_data.get("protocol", first_result.get("protocol", "unknown")),
+        "seed": result_data.get("seed", first_result.get("seed")),
+        "households_completed": len(result_data.get("results", [])),
+        "households_requested": result_data.get("total_households", len(result_data.get("results", []))),
+        "error_count": len(result_data.get("errors", [])),
+        "result": result_data,
+    }
+    _BENCHMARK_RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    target = _BENCHMARK_RESULT_DIR / f"{result_id}.json"
+    temporary = _BENCHMARK_RESULT_DIR / f".{result_id}.tmp"
+    temporary.write_text(json.dumps(record, indent=2, ensure_ascii=True), encoding="utf-8")
+    temporary.replace(target)
+    return {key: record[key] for key in (
+        "id", "saved_at", "source", "status", "dataset", "protocol", "seed",
+        "households_completed", "households_requested", "error_count",
+    )}
+
+
+def _read_saved_benchmark_result(result_id: str) -> dict:
+    if not result_id or any(character not in "0123456789abcdef" for character in result_id.lower()):
+        raise HTTPException(status_code=404, detail="Saved benchmark result not found")
+    path = _BENCHMARK_RESULT_DIR / f"{result_id}.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Saved benchmark result not found") from error
+
+
+def _list_saved_benchmark_results() -> list[dict]:
+    if not _BENCHMARK_RESULT_DIR.exists():
+        return []
+    records = [json.loads(path.read_text(encoding="utf-8")) for path in _BENCHMARK_RESULT_DIR.glob("*.json")]
+    records.sort(key=lambda record: record.get("saved_at", ""), reverse=True)
+    return [{key: record.get(key) for key in (
+        "id", "saved_at", "source", "status", "dataset", "protocol", "seed",
+        "households_completed", "households_requested", "error_count",
+    )} for record in records]
 
 
 def _get_detector(module: str, method: str):
@@ -91,7 +158,7 @@ def root():
         "service": settings.api_title,
         "status": "ok",
         "docs": "/docs",
-        "endpoints": ["/datasets", "/series", "/detect", "/evaluate", "/profiles/build"],
+        "endpoints": ["/datasets", "/series", "/detect", "/evaluate", "/benchmark", "/profiles/build", "/product/analyze", "/app"],
     }
 
 
@@ -249,6 +316,222 @@ def series_range(dataset: str, household: str):
     }
 
 
+def _benchmark_aggregate(results: list[dict]) -> list[dict]:
+    grouped: dict[tuple[str, str, str], list[dict]] = {}
+    for result in results:
+        for method in result["methods"]:
+            if not method.get("applicable"):
+                continue
+            for metric in method["scores"]["classes"]:
+                key = (method["method"], metric["signal"], metric["direction"])
+                grouped.setdefault(key, []).append({
+                    **metric,
+                    "household": result["household"],
+                    "normal_events_per_week": next(
+                        (
+                            normal_metric["alerts_per_household_week"]
+                            for normal_metric in method["normal_scores"]["classes"]
+                            if normal_metric["signal"] == metric["signal"]
+                            and normal_metric["direction"] == metric["direction"]
+                        ),
+                        0.0,
+                    ),
+                })
+    aggregate = []
+    for (method, signal, direction), rows in sorted(grouped.items()):
+        def metric_mean(name: str) -> float | None:
+            values = [row[name] for row in rows if row[name] is not None]
+            return round(sum(values) / len(values), 4) if values else None
+
+        aggregate.append({
+            "method": method,
+            "signal": signal,
+            "direction": direction,
+            "households": len(rows),
+            "macro_precision": metric_mean("precision"),
+            "macro_recall": metric_mean("recall"),
+            "macro_f1": metric_mean("f1"),
+            "precision_households": sum(row["precision"] is not None for row in rows),
+            "recall_households": sum(row["recall"] is not None for row in rows),
+            "f1_households": sum(row["f1"] is not None for row in rows),
+            "detected": sum(row["detected"] for row in rows),
+            "ground_truth": sum(row["ground_truth"] for row in rows),
+            "matched": sum(row["matched"] for row in rows),
+            "mean_unmatched_injected_events": round(sum(row["false_positives"] for row in rows) / len(rows), 3),
+            "mean_no_injection_events_per_week": round(
+                sum(row["normal_events_per_week"] for row in rows) / len(rows), 3
+            ),
+        })
+    return aggregate
+
+
+def _run_benchmark_job(
+    job_id: str,
+    request: BenchmarkRequest,
+    households: list[str],
+    weather_audit: dict,
+) -> None:
+    with _BENCHMARK_JOBS_LOCK:
+        _BENCHMARK_JOBS[job_id]["status"] = "running"
+    results: list[dict] = []
+    errors: list[dict[str, str]] = []
+    for index, household in enumerate(households):
+        try:
+            result = run_household_benchmark(
+                request.dataset,
+                household,
+                request.patterns,
+                request.seed,
+                bool(weather_audit["weather_gas_enabled"]),
+                request.lookback_days,
+                request.strengths,
+                request.protocol,
+            )
+            results.append(result)
+        except Exception as error:
+            errors.append({"household": household, "error": str(error)})
+        with _BENCHMARK_JOBS_LOCK:
+            _BENCHMARK_JOBS[job_id].update({
+                "completed_households": index + 1,
+                "current_household": household,
+                "results": results,
+                "errors": errors,
+            })
+    completed_job = {
+        "job_id": job_id,
+        "status": "completed" if results else "failed",
+        "total_households": len(households),
+        "all_households": True,
+        "completed_households": len(results) + len(errors),
+        "results": results,
+        "errors": errors,
+        "aggregate": _benchmark_aggregate(results),
+        "weather_audit": weather_audit,
+        "protocol": request.protocol,
+        "dataset": request.dataset,
+        "patterns": request.patterns,
+        "strengths": request.strengths,
+        "seed": request.seed,
+        "lookback_days": request.lookback_days,
+    }
+    try:
+        saved_metadata = _persist_benchmark_result(completed_job, "background")
+        completed_job.update(saved_metadata)
+        completed_job["saved_result_id"] = saved_metadata["id"]
+    except OSError as error:
+        completed_job["save_error"] = str(error)
+    with _BENCHMARK_JOBS_LOCK:
+        _BENCHMARK_JOBS[job_id].update(completed_job)
+
+
+@app.get("/benchmark/weather-audit")
+def benchmark_weather_audit(household: str = "Klant 34"):
+    """Audit daily/hourly weather and gas alignment before weather scenarios."""
+    try:
+        return audit_weather_linkage(household)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/benchmark")
+def start_benchmark(request: BenchmarkRequest):
+    """Run one household now, or queue all included households with progress."""
+    allowed_strengths = {0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 2.0}
+    if not request.patterns:
+        raise HTTPException(status_code=400, detail="Select at least one benchmark pattern")
+    if not request.strengths or not set(request.strengths) <= allowed_strengths:
+        raise HTTPException(status_code=400, detail="Unsupported injection strength")
+    dataset_info = next((item for item in available_datasets() if item.id == request.dataset), None)
+    if dataset_info is None or not dataset_info.available:
+        raise HTTPException(status_code=400, detail="Unknown or unavailable benchmark dataset")
+    if request.all_households:
+        households = dataset_info.households
+    elif request.household:
+        households = [request.household]
+    else:
+        raise HTTPException(status_code=400, detail="Select a household or enable all households")
+    if not households:
+        raise HTTPException(status_code=400, detail="No included households are available for this dataset")
+    audit_household = "Klant 34" if "Klant 34" in households else households[0]
+    try:
+        weather_audit = audit_weather_linkage(audit_household)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if request.all_households:
+        job_id = uuid4().hex
+        with _BENCHMARK_JOBS_LOCK:
+            _BENCHMARK_JOBS[job_id] = {
+                "job_id": job_id,
+                "protocol": request.protocol,
+                "status": "queued",
+                "total_households": len(households),
+                "completed_households": 0,
+                "current_household": None,
+                "results": [],
+                "errors": [],
+                "weather_audit": weather_audit,
+            }
+        _BENCHMARK_EXECUTOR.submit(_run_benchmark_job, job_id, request, households, weather_audit)
+        return {"job_id": job_id, "status": "queued", "total_households": len(households), "protocol": request.protocol}
+    try:
+        result = run_household_benchmark(
+            request.dataset,
+            households[0],
+            request.patterns,
+            request.seed,
+            bool(weather_audit["weather_gas_enabled"]),
+            request.lookback_days,
+            request.strengths,
+            request.protocol,
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    response_data = {
+        "status": "completed",
+        "protocol": request.protocol,
+        "weather_audit": weather_audit,
+        "results": [result],
+        "aggregate": _benchmark_aggregate([result]),
+    }
+    try:
+        response_data.update(_persist_benchmark_result(response_data, "automatic"))
+    except OSError as error:
+        response_data["save_error"] = str(error)
+    return response_data
+
+
+@app.get("/benchmark/jobs/{job_id}")
+def benchmark_job(job_id: str):
+    with _BENCHMARK_JOBS_LOCK:
+        job = _BENCHMARK_JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Benchmark job not found")
+        return job
+
+
+@app.get("/benchmark/saved")
+def saved_benchmarks():
+    """List saved benchmark runs, newest first."""
+    return _list_saved_benchmark_results()
+
+
+@app.get("/benchmark/saved/{result_id}")
+def saved_benchmark(result_id: str):
+    """Return a saved benchmark run and all its household results."""
+    return _read_saved_benchmark_result(result_id)
+
+
+@app.post("/benchmark/saved")
+def save_benchmark(request: SaveBenchmarkRequest):
+    """Persist a completed result currently held by a benchmark page."""
+    if request.result.get("status") not in {"completed", "failed"} or not isinstance(request.result.get("results"), list):
+        raise HTTPException(status_code=400, detail="Only a completed benchmark result can be saved")
+    try:
+        return _persist_benchmark_result(request.result, "manual")
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not save benchmark result: {error}") from error
+
+
 @app.post("/evaluate", response_model=EvaluationResponse)
 def evaluate(request: EvaluationRequest):
     """Compare the selected detector with one prepared synthetic scenario."""
@@ -333,8 +616,34 @@ def evaluate(request: EvaluationRequest):
 def profile_build(request: ProfileRequest):
     """Summarize the same normalized daily series used by event detection."""
     try:
-        points = get_series(request.dataset, request.household)
+        points = get_series(request.dataset, request.household, request.range_start, request.range_end)
         profile = build_profile(points, request.household, request.home.model_dump())
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return ProfileResponse(dataset=request.dataset, profile=profile)
+
+
+@app.post('/product/analyze')
+def product_analyze(request: ProfileRequest):
+    """One source selection feeds the profile and rules; UI ranks the existing tips."""
+    try:
+        points = get_series(request.dataset, request.household, request.range_start, request.range_end)
+        result = analyze_household(points, request.household, request.home.model_dump())
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {'dataset': request.dataset, **result}
+
+
+@app.get('/app', include_in_schema=False)
+def resident_app():
+    return FileResponse(Path(__file__).resolve().parents[2] / 'index.html')
+
+
+@app.get('/event_detection.html', include_in_schema=False)
+def analyst_app():
+    return FileResponse(Path(__file__).resolve().parents[2] / 'event_detection.html')
+
+
+@app.get('/event_benchmark.html', include_in_schema=False)
+def benchmark_app():
+    return FileResponse(Path(__file__).resolve().parents[2] / 'event_benchmark.html')

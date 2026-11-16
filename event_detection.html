@@ -28,6 +28,8 @@ header { display: flex; justify-content: space-between; gap: 20px; align-items: 
 h1 { margin: 0; color: var(--green-dark); font-size: clamp(26px, 4vw, 42px); line-height: 1.05; }
 .lead { max-width: 720px; margin: 10px 0 0; color: var(--muted); font-size: 15px; }
 .status { padding: 10px 14px; border-left: 4px solid var(--yellow); background: #fff8df; color: #5e4d14; font-size: 14px; }
+.benchmark-link { flex:0 0 auto; padding:9px 12px; border:1px solid var(--green); border-radius:6px; color:var(--green-dark); text-decoration:none; font-size:13px; font-weight:700; }
+.benchmark-link:hover { background:#e8f0ea; }
 .panel { background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 26px rgba(31,65,40,.08); }
 .controls { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 12px; padding: 16px; }
 label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; font-weight: 600; }
@@ -98,6 +100,7 @@ tr.event-row:hover, tr.event-row.selected { background: #fff8df; }
       <h1>Event detection analyst view</h1>
       <p class="lead">Inspect detector output across a household series. The detector uses all selected readings; the chart is downsampled only for readability.</p>
     </div>
+    <a class="benchmark-link" href="event_benchmark.html">Compare detectors &rarr;</a>
     <div id="status" class="status">Ready</div>
   </header>
 

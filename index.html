@@ -3662,10 +3662,13 @@ function renderMenu(lang = 'nl') {
       'Welkom bij de demonstratie van het Energieverdienspel',
       'Welcome to the demonstration of the Energieverdienspel', lang) + '</h1>'
     + '<p class="menu-lead">' + say(
-      'Kies welk onderdeel je wilt bekijken. Alle gegevens en resultaten in deze demonstratie zijn fictief.',
-      'Choose which section you would like to view. All data and results in this demonstration are fictitious.', lang)
+      'Kies huishoudanalyse voor historische onderzoeksgegevens. Het spel en dashboard gebruiken gesimuleerde gegevens.',
+      'Choose household analysis for historical research data. The game and dashboard use simulated data.', lang)
     + '</p>'
-    + '<div class="menu-entries">' + entries + '</div>'
+    + '<div class="menu-entries"><button class="menu-entry" data-menu="product"><strong>'
+      + say('Huishoudanalyse', 'Household analysis', lang) + '</strong><span>'
+      + say('Onderzoeksgegevens → profiel → patronen → tip.', 'Research data → profile → patterns → tip.', lang)
+      + '</span></button>' + entries + '</div>'
     // A genuine reset lives here and nowhere else. On every other screen the
     // top-left button returns to this menu without erasing anything.
     + '<button class="menu-reset" data-restart>' + say(
@@ -4238,18 +4241,8 @@ function renderHome(app, state, lang) {
   const stageName = stage[lang] || stage.nl;
   // Chosen from this household's own recent readings, and never a
   // turn-the-heating-down tip for someone already under the comfort floor.
-  const event = chooseEventForAdvice(
-  detectedEventsForAdvice
-  );
-
   const underHeating = app.floorDays > 0;
-
-  const advice = selectTipForEvent(
-    event,
-    TIPS,
-    app.season,
-    underHeating,
-    state.home    );
+  const advice = dailyRecommendation(app.expectedSeries, app.readings, TIPS, app.season, state.home);
   if (advice) {
   logAdviceExposure(
   advice,
@@ -4528,23 +4521,37 @@ function renderProfile(app, state, lang) {
 // Household profile builder uses the same API base, cards and controls as Events.
 function renderHouseholdBuilder(app, state, lang) {
   const label = (nl, en) => say(nl, en, lang);
-  return '<h2>' + label('Huishoudprofiel bouwen', 'Build household profile') + '</h2>'
-    + '<p class="note">' + label('Een kort overzicht van je dagelijkse verbruik.', 'A quick overview of your daily usage.') + '</p>'
+  return '<h2>' + label('Huishoudanalyse', 'Household analysis') + '</h2>'
+    + '<p class="note">' + label('Eén huishouden: profiel, verbruikspatronen en een passende tip uit de teamcatalogus. Dit zijn historische onderzoeksgegevens.', 'One household: profile, consumption patterns and a relevant tip from the team catalogue. These are historical research data.') + '</p>'
     + card(label('Gegevens kiezen', 'Select data'), '<form id="hp-form"><div class="evt-controls">'
       + '<label class="evt-control">Dataset<select id="hp-dataset" required disabled></select></label>'
       + '<label class="evt-control">' + label('Huishouden', 'Household') + '<select id="hp-household" required disabled></select></label>'
+      + '<label class="evt-control">' + label('Vanaf (optioneel)', 'From (optional)') + '<input id="hp-from" type="datetime-local"></label>'
+      + '<label class="evt-control">' + label('Tot (optioneel)', 'To (optional)') + '<input id="hp-to" type="datetime-local"></label>'
       + '</div><details><summary>' + label('Woninginformatie (optioneel)', 'Home information (optional)') + '</summary><div class="evt-controls">'
       + '<label class="evt-control">' + label('Energielabel', 'Energy label') + '<select id="hp-label"><option value="">—</option>' + ['A++++','A+++','A++','A+','A','B','C','D','E','F','G'].map(v => '<option>' + v + '</option>').join('') + '</select></label>'
       + '<label class="evt-control">' + label('Oppervlakte (m²)', 'Floor area (m²)') + '<input id="hp-area" type="number" min="0.1" step="any"></label>'
       + '<label class="evt-control">' + label('Werktijden', 'Work schedule') + '<input id="hp-work" maxlength="200"></label>'
       + '<label class="evt-control">' + label('Slaaptijden', 'Sleep schedule') + '<input id="hp-sleep" maxlength="200"></label>'
-      + '</div></details><button class="btn" id="hp-build" disabled>' + label('Profiel bouwen', 'Build profile') + '</button></form>')
+      + '</div></details><button class="btn" id="hp-build" disabled>' + label('Analyse starten', 'Run analysis') + '</button></form>')
     + '<p id="hp-status" class="evt-status" role="status" aria-live="polite"></p><div id="hp-result"></div>';
+}
+
+// The product flow owns its household context. It never reads the simulated persona.
+function productRecommendation(result) {
+  const event = chooseEventForAdvice(result.events.filter(event =>
+    (event.type === 'high_gas' && result.profile.fuels.gas_m3.status === 'ready') ||
+    (event.type === 'high_electricity' && result.profile.fuels.electricity_kwh.status === 'ready')));
+  if (!event) return null;
+  const month = Number(event.start.slice(5, 7));
+  const season = ['winter', 'spring', 'summer', 'autumn'][Math.floor((month % 12) / 3)];
+  return selectTipForEvent(event, TIPS.filter(tip => tip.euroPerPersonPerYear == null), season, !result.advice_context.allow_heating_reduction,
+    {energyLabel: result.profile.home.energy_label});
 }
 
 async function mountHouseholdBuilder(container, lang) {
   const label = (nl, en) => say(nl, en, lang);
-  const find = (id) => container.querySelector('#hp-' + id);
+  const find = id => container.querySelector('#hp-' + id);
   const status = find('status');
   const api = async (path, options) => {
     const response = await fetch(EVT_API_BASE + path, options);
@@ -4554,64 +4561,89 @@ async function mountHouseholdBuilder(container, lang) {
     }
     return response.json();
   };
-  const showError = (error) => { status.textContent = label('Kan niet laden: ', 'Unable to load: ') + error.message; status.classList.add('warn'); };
-  const fmt = (v) => v == null ? '—' : new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(v);
+  const showError = error => { status.textContent = label('Kan niet laden: ', 'Unable to load: ') + error.message; status.classList.add('warn'); };
+  const fmt = v => v == null ? '—' : new Intl.NumberFormat(lang, {maximumFractionDigits: 2}).format(v);
+  const payload = () => ({dataset: find('dataset').value, household: find('household').value,
+    range_start: find('from').value || null, range_end: find('to').value || null,
+    home: {energy_label: find('label').value || null, floor_area_m2: find('area').value ? Number(find('area').value) : null,
+      work_schedule: find('work').value || null, sleep_schedule: find('sleep').value || null}});
   status.textContent = label('Datasets laden…', 'Loading datasets…');
   try {
-    const datasets = await api('/datasets');
+    const datasets = (await api('/datasets')).filter(d => d.available && d.households.length);
     if (!container.isConnected) return;
-    find('dataset').innerHTML = datasets.filter(d => d.available).map(d => '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>').join('');
+    if (!datasets.length) throw new Error(label('Geen gegevens beschikbaar.', 'No datasets available.'));
+    find('dataset').innerHTML = datasets.map(d => '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>').join('');
+    find('dataset').value = datasets.some(d => d.id === 'zonnedael') ? 'zonnedael' : datasets[0].id;
     const update = () => {
       const selected = datasets.find(d => d.id === find('dataset').value);
       find('household').innerHTML = (selected?.households || []).map(h => '<option value="' + escapeHtml(h) + '">' + escapeHtml(h) + '</option>').join('');
+      if (selected?.households.includes('Klant 34')) find('household').value = 'Klant 34';
       find('household').disabled = !selected?.households.length;
       find('build').disabled = find('household').disabled;
-      find('result').innerHTML = '';
     };
-    find('dataset').disabled = !datasets.length;
+    find('dataset').disabled = false;
     find('dataset').addEventListener('change', update);
     update();
-    status.textContent = label('Kies gegevens en bouw een profiel.', 'Select data and build a profile.');
+    status.textContent = label('Kies een huishouden en start de analyse.', 'Select a household and run the analysis.');
   } catch (error) { showError(error); }
-  find('form').addEventListener('submit', async (event) => {
+  let generation = 0;
+  find('form').addEventListener('input', () => {
+    generation++;
+    find('result').innerHTML = '';
+    status.textContent = label('Selectie gewijzigd. Start de analyse opnieuw.', 'Selection changed. Run the analysis again.');
+  });
+  find('form').addEventListener('submit', async event => {
     event.preventDefault();
+    const current = ++generation;
     find('build').disabled = true;
     find('result').innerHTML = '';
     status.classList.remove('warn');
-    status.textContent = label('Profiel berekenen…', 'Building profile…');
+    status.textContent = label('Analyseren…', 'Analyzing…');
     try {
-      const result = await api('/profiles/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        dataset: find('dataset').value, household: find('household').value,
-        home: {energy_label: find('label').value || null, floor_area_m2: find('area').value ? Number(find('area').value) : null, work_schedule: find('work').value || null, sleep_schedule: find('sleep').value || null},
-
-      }) });
-      if (!container.isConnected) return;
+      const result = await api('/product/analyze', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload())});
+      if (!container.isConnected || current !== generation) return;
       const p = result.profile;
-      const weekday = (day) => new Intl.DateTimeFormat(lang, {weekday: 'short', timeZone: 'UTC'}).format(new Date(Date.UTC(2024, 0, 1 + day)));
-      const html = card(escapeHtml(p.household_id),
-        statRow(label('Periode', 'Period'), escapeHtml(p.period.start + ' – ' + p.period.end))
-        + statRow(label('Stroom per dag', 'Electricity per day'), fmt(p.fuels.electricity_kwh.mean_daily) + ' kWh')
-        + statRow(label('Gas per dag', 'Gas per day'), fmt(p.fuels.gas_m3.mean_daily) + ' m³')
-        + statRow(label('Hoogste stroomverbruik', 'Highest electricity usage'), p.fuels.electricity_kwh.highest_usage_weekdays.map(weekday).join(', ') || '—')
-        + '<details><summary>' + label('Dagpatroon en woning', 'Daily pattern and home') + '</summary>'
-        + Object.entries(p.fuels.electricity_kwh.by_weekday).map(([day, value]) => statRow(weekday(Number(day)), fmt(value) + ' kWh')).join('')
-        + statRow(label('Energielabel', 'Energy label'), escapeHtml(p.home.energy_label || '—'))
-        + statRow(label('Oppervlakte', 'Floor area'), fmt(p.home.floor_area_m2) + ' m²')
-        + statRow(label('Werktijden', 'Work schedule'), escapeHtml(p.home.work_schedule || '—'))
-        + statRow(label('Slaaptijden', 'Sleep schedule'), escapeHtml(p.home.sleep_schedule || '—'))
-        + '</details>')
-        + '<p class="note">' + label('Dagtotalen: piekuren en nachtverbruik zijn niet beschikbaar.', 'Daily totals: peak hours and night usage are unavailable.') + '</p>';
+      const weekday = day => new Intl.DateTimeFormat(lang, {weekday: 'short', timeZone: 'UTC'}).format(new Date(Date.UTC(2024, 0, 1 + day)));
+      const readiness = value => value === 'ready' ? label('Voldoende gegevens', 'Enough data') : value === 'unavailable' ? label('Niet beschikbaar', 'Unavailable') : label('Onvoldoende historie', 'Insufficient history');
+      const fuelCard = (fuel, title, unit) => {
+        const f = p.fuels[fuel];
+        return card(title, statRow(label('Gegevens', 'Data'), readiness(f.status))
+          + statRow(label('Gemiddeld per volledige dag', 'Mean per complete day'), fmt(f.mean_daily) + ' ' + unit)
+          + statRow(label('Volledige dagen', 'Complete days'), f.valid_days + ' / ' + p.period.calendar_days)
+          + statRow(label('Dekking', 'Coverage'), fmt(f.coverage * 100) + '%')
+          + '<details><summary>' + label('Weekpatroon', 'Weekday pattern') + '</summary>'
+          + Object.entries(f.by_weekday).map(([day, value]) => statRow(weekday(Number(day)), fmt(value) + ' ' + unit + ' (n=' + f.weekday_samples[day] + ')')).join('') + '</details>');
+      };
+      let html = card(escapeHtml(p.household_id), statRow(label('Dataset', 'Dataset'), escapeHtml(result.dataset))
+        + statRow(label('Periode', 'Period'), escapeHtml(p.period.start + ' – ' + p.period.end))
+        + '<p>' + label('Drempel voor de demo: 30 volledige dagen en 80% dekking per energietype. Dit is geen bewijs van voorspelkwaliteit.', 'Demo threshold: 30 complete days and 80% coverage per fuel. This does not establish prediction accuracy.') + '</p>')
+        + fuelCard('electricity_kwh', label('Stroomprofiel', 'Electricity profile'), 'kWh')
+        + fuelCard('gas_m3', label('Gasprofiel', 'Gas profile'), 'm³')
+        + card(label('Datakwaliteit', 'Data quality'), '<p>' + p.data_quality.length + ' ' + label('dagen met ontbrekende of onvolledige gegevens.', 'days with missing or incomplete data.') + '</p>'
+          + '<details><summary>' + label('Datums bekijken', 'View dates') + '</summary><ul>' + p.data_quality.map(issue => '<li>' + escapeHtml(issue.date + ': ' + issue.status + ' — ' + issue.fuels.join(', ')) + '</li>').join('') + '</ul></details>')
+        + card(label('Woning', 'Home'), [
+          ['woning_type', label('Woningtype', 'House type')], ['bouwjaar_band', label('Bouwperiode', 'Build period')],
+          ['gezinssituatie', label('Huishoudsituatie', 'Household situation')], ['energy_label', label('Energielabel', 'Energy label')],
+          ['floor_area_m2', label('Oppervlakte (m²)', 'Floor area (m²)')], ['work_schedule', label('Werktijden', 'Work schedule')],
+          ['sleep_schedule', label('Slaaptijden', 'Sleep schedule')]
+        ].map(([key, title]) => statRow(title, escapeHtml(p.home[key] == null ? '—' : String(p.home[key])))).join(''))
+        + card(label('Verbruikspatronen', 'Consumption patterns'), result.events.length ? '<ul>' + result.events.map(event => '<li>' + escapeHtml(event.start.slice(0, 10) + ': ' + evtLabel(event.type)) + '</li>').join('') + '</ul>' : '<p>' + label('Geen patronen gevonden met voldoende gegevens.', 'No patterns found with sufficient data.') + '</p>');
+      const advice = productRecommendation(result);
+      html += card(label('Passende tip', 'Relevant tip'), advice ? '<h4>' + escapeHtml(advice.tip[lang].title) + '</h4><p>'
+        + escapeHtml(advice.tip[lang].body || advice.tip[lang].text || '') + '</p><p>'
+        + label('Gekozen op basis van het laatst gedetecteerde patroon. Minder verwarmen wordt niet aangeraden: comfort is niet beoordeeld.', 'Selected from the latest detected pattern. Heating reduction is withheld: comfort has not been assessed.') + '</p>'
+        : '<p>' + label('Geen geschikte tip op basis van deze analyse.', 'No suitable tip from this analysis.') + '</p>');
+      html += '<p class="note">' + label('Historische analyse, geen live voorspelling. Besparingen en spelvoortgang elders in de app zijn gesimuleerd.', 'Historical analysis, not a live forecast. Savings and game progress elsewhere in the app are simulated.') + '</p>';
       find('result').innerHTML = html;
-      status.textContent = label('Profiel gebouwd.', 'Profile built.');
-    } catch (error) { showError(error); }
+      status.textContent = label('Analyse voltooid.', 'Analysis complete.');
+    } catch (error) { if (container.isConnected && current === generation) showError(error); }
     finally { if (container.isConnected) find('build').disabled = false; }
   });
 }
 
 // ---- event detection tab ----
 // The event screen only depends on the small API contract.
-const EVT_API_BASE = window.EVS_EVENT_API_BASE_URL || 'http://127.0.0.1:8000';
-let detectedEventsForAdvice = [];
+const EVT_API_BASE = window.EVS_EVENT_API_BASE_URL || (window.location.protocol.startsWith('http') && window.location.pathname === '/app' ? window.location.origin : 'http://127.0.0.1:8000');
 const EVT_COLORS = Object.freeze({
   high_electricity: '#F2B705',
   high_gas: '#B3261E',
@@ -4762,7 +4794,7 @@ function mountEventDetection(container) {
         container.querySelector('#evt-metrics').innerHTML = result.metrics.length ? result.metrics.map((metric) => '<div class="evt-metric"><strong>' + escapeHtml(evtLabel(metric.event_type)) + '</strong><span>Precision: ' + evtPercent(metric.precision) + ' &middot; Recall: ' + evtPercent(metric.recall) + ' &middot; F1: ' + evtPercent(metric.f1) + '</span><span>Detected: ' + metric.detected + ' &middot; Synthetic expected: ' + metric.ground_truth + ' &middot; Matched: ' + metric.matched + '</span></div>').join('') : '<p class="evt-muted">No expected or detected events in this test case.</p>';
         container.querySelector('#evt-quality').innerHTML = result.data_quality.length ? '<p><strong>Data quality findings: ' + result.data_quality.length + '</strong></p><ul>' + result.data_quality.map((issue) => '<li>' + escapeHtml(issue.date.slice(0, 10) + ': ' + issue.status + ' - ' + issue.details) + '</li>').join('') + '</ul>' : '<p class="evt-muted">No missing or partial readings in this scenario.</p>';
       } else {
-        events = result; detectedEventsForAdvice = result; selectedId = null; draw(); const qualityCount = points.filter((point) => point.quality_flag !== 'ok').length; setStatus(events.length ? events.length + ' patterns found across ' + points.length + ' readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : '') : 'No unusual patterns found across ' + points.length + ' readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : ''));
+        events = result; selectedId = null; draw(); const qualityCount = points.filter((point) => point.quality_flag !== 'ok').length; setStatus(events.length ? events.length + ' patterns found across ' + points.length + ' readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : '') : 'No unusual patterns found across ' + points.length + ' readings.' + (qualityCount ? ' ' + qualityCount + ' incomplete readings excluded.' : ''));
       }
     } catch (error) { setStatus('Backend offline or unavailable: ' + error.message, true); }
   };
@@ -4789,7 +4821,7 @@ function mountEventDetection(container) {
 const BOTTOM_TABS = Object.freeze(['home', 'savings', 'challenges', 'tips', 'event-detection', 'profile']);
 
 const TABS = Object.freeze([
-  Object.freeze({ id: 'household-builder', icon: '\u{1F3E0}', nl: 'Huishoudprofiel', en: 'Household builder', render: renderHouseholdBuilder }),
+  Object.freeze({ id: 'household-builder', icon: '\u{1F3E0}', nl: 'Huishoudanalyse', en: 'Household analysis', render: renderHouseholdBuilder }),
   Object.freeze({ id: 'home', icon: '\u{1F333}', nl: 'Start', en: 'Home', render: renderHome }),
   Object.freeze({ id: 'savings', icon: '\u{1F4B6}', nl: 'Besparing', en: 'Savings', render: renderSavings }),
   Object.freeze({ id: 'challenges', icon: '\u{1F3AF}', nl: 'Uitdagingen', en: 'Challenges', render: renderChallenges }),
@@ -5470,6 +5502,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (event.target.closest('[data-restart]')) { restartDemo(); return; }
 
       const entry = event.target.closest('[data-menu]')?.dataset.menu;
+      if (entry === 'product') {
+        clearOverlays(); view = 'app';
+        if (!appView) appView = start(() => app, store);
+        redrawView = () => appView.draw();
+        appView.go('household-builder'); return;
+      }
       if (entry === 'app') { enterApp(); return; }
       if (entry === 'dashboard') { enterDashboard(); return; }
       if (entry === 'journey') { enterJourney(); return; }

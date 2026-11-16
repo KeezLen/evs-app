@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from event_detection.evaluation.matching import match_events
 from event_detection.evaluation.scenarios import load_scenario
+from event_detection.evaluation.weather_audit import audit_weather_linkage
 from event_detection.schemas import Event
 
 
@@ -58,3 +59,15 @@ def test_missing_scenario_separates_quality_from_truth():
     assert [issue.status for issue in quality].count("missing") == 3
     assert [issue.status for issue in quality].count("partial") == 3
     assert [issue.status for issue in quality].count("gap") == 2
+
+
+def test_weather_audit_validates_de_bilt_coverage_and_daily_gas_reconciliation():
+    audit = audit_weather_linkage("Klant 34")
+
+    assert audit["status"] == "ready"
+    assert audit["weather_gas_enabled"] is True
+    assert audit["hourly_temperature_coverage"] == 1
+    assert audit["daily_temperature_coverage"] == 1
+    assert audit["date_alignment"] == 1
+    assert audit["max_daily_vs_hourly_gas_difference_m3"] <= 0.001
+    assert "proxy" in audit["weather_source_note"]

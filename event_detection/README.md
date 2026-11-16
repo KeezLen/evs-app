@@ -34,6 +34,13 @@ date filtering. The selected date range is the detection window; Isolation
 Forest and RNN automatically use earlier available household readings as
 training history when enough data exists.
 
+For controlled detector comparisons, open `event_benchmark.html`. Select a
+household for an immediate run, or choose all included households to run a
+background batch with progress. The benchmark splits each series chronologically
+70%/10%/20% for training, calibration, and test, and injects labeled changes
+only into an in-memory copy of the test partition. These are synthetic
+sensitivity tests, not appliance labels or naturally observed faults.
+
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose
 a date range, and click **Run detection**. The tab loads the selected series
@@ -54,6 +61,19 @@ visible as breaks in the chart.
   totals, durations, and event windows for the analyst view.
 - `GET /series-range?dataset=...&household=...` returns the recorded start and
   end dates for the selected household and dataset.
+- `GET /benchmark/weather-audit?household=...` reports daily/hourly weather
+  coverage, date alignment, temperature summary differences, and gas
+  reconciliation.
+- `POST /benchmark` runs one household synchronously or queues all included
+  households and returns a job ID. Poll `GET /benchmark/jobs/{job_id}` for
+  progress and results. Completed single-household and background runs are
+  automatically saved as JSON in the repository's `benchmark_results/`
+  directory. These files are local and git-ignored.
+- `GET /benchmark/saved` lists saved runs; `GET /benchmark/saved/{result_id}`
+  returns a complete saved result. `POST /benchmark/saved` accepts
+  `{"result": <completed benchmark response>}` to save a result already
+  displayed in the benchmark page. The page also provides saved-run loading
+  and manual-save controls. A save failure is reported on the run response.
 - `POST /evaluate` uses the same request plus `tolerance_minutes` and a
   `scenario`.
 
@@ -76,6 +96,9 @@ separately as `data_quality`.
 `/detect` with `module: "anomaly"` supports `method: "isolation_forest"` and
 `method: "rnn"`. Isolation Forest fits separate household-specific models for valid
 electricity and gas observations, using calendar and available weather context.
+Optional weather imputation values are learned from the training partition and
+reused for calibration and test, so held-out weather distributions do not set
+their own fill values.
 At least 30 valid observations are required per signal. The detector reports
 generic `unusual_electricity` and `unusual_gas` events; it does not identify an
 appliance or causal explanation. Partial and missing observations are excluded.
@@ -97,6 +120,54 @@ Median +/- 3 MAD is a possible alternative: it is robust and compact, but less
 responsive to skewed residual tails. RNN is currently limited to 15-minute and
 hourly data; the prepared evaluation scenarios are daily and therefore do not
 support RNN evaluation yet.
+
+The benchmark currently compares Rules on daily data and Isolation Forest/RNN
+on supported resolutions. The API accepts `protocol` as `corrected_v2` (the
+default) or `legacy_v1`; every result records its protocol, settings, seed,
+and date partitions. Legacy reproduces the previous injection and scoring
+logic, including its known label defects and zero-valued undefined metrics.
+It does not recover old job outputs or guarantee identical results across
+different detector code, data, dependencies, or execution environments.
+Do not compare old screenshots as though they used the corrected protocol.
+
+Corrected low-use injections reduce each original positive reading. Windows
+must be contiguous and contain valid data; cold-weather gas windows must meet
+the training HDD cutoff even when searching earlier in the test partition.
+Skipped cases and reasons are reported. Each injected event records original
+and changed interval values and realized deltas. High injections are based on
+the greater of the original value and the training baseline, so the requested
+strength is not necessarily the actual percentage change from the original.
+
+Select event families and relative strengths in the
+benchmark UI. It injects household-relative spikes (+50%, +100%,
++200%), low-use changes (-50%, -80%), and sustained high-use shifts (+30%,
++60% for 6 or 24 hours). Weather-aware gas injections are enabled only when the
+weather audit passes; the audit currently finds complete daily/hourly
+temperature coverage, aligned dates, and gas sums within 0.001 m3 on comparable
+days. Mean daily/hourly temperature difference is about 0.11 C. KNMI De Bilt
+remains a proxy because the households' actual location is unknown; each
+resolution uses its own weather values.
+
+Event matching is one-to-one and requires at least 50% ground-truth duration
+overlap after a one-interval tolerance. Results include per-household and
+macro precision/recall/F1, unmatched detections on injected test data, alerts on
+the untouched test copy per household-week, detection delay, duration overlap,
+and runtime. In corrected v2, precision is undefined when there are no
+detections and recall is undefined when there are no injected events for a
+class. F1 uses `2 * matched / (detected + injected)`; macro averages exclude
+undefined values and report contributing household counts. A class absent from
+both detections and labels does not appear. Unmatched detections can be real
+natural events, not verified false positives. All-household runs use an
+in-memory job registry; job state does not survive an API restart.
+
+Each result also reports per-detector/signal support counts and eligibility
+status, including RNN training and calibration window counts. `sufficient_support`
+means configured minimum counts were met, not that training succeeded or the
+detector is accurate. The `no_alert` control is a negative control. Each
+`random_budget_*` control places seeded random windows with the corresponding
+detector's untouched-test event count, signal, direction, and duration. It is a
+placement reference at that alert budget, not a null distribution or a verified
+false-alarm estimate; use multiple seeds before drawing broader conclusions.
 
 ## Adding data
 

@@ -34,6 +34,50 @@ def test_isolation_forest_uses_provisional_chronological_defaults():
     assert detector.contamination == 0.01
 
 
+def test_isolation_forest_imputes_heldout_weather_from_training_only():
+    detector = IsolationForestAnomalyDetector()
+    training = [
+        SeriesPoint(timestamp=datetime(2026, 1, 1) + timedelta(days=index),
+                    electricity_kwh=10, temp_mean_c=value, hdd18=value + 5,
+                    quality_flag="ok")
+        for index, value in enumerate((5.0, 15.0))
+    ]
+    heldout = [
+        SeriesPoint(timestamp=datetime(2026, 2, 1) + timedelta(days=index),
+                    electricity_kwh=10, temp_mean_c=None, hdd18=None,
+                    quality_flag="ok")
+        for index in range(2)
+    ]
+
+    training_medians = detector._context_medians(training)
+    features = detector._features(heldout, "electricity_kwh", training_medians)
+
+    assert features[:, 5].tolist() == [10.0, 10.0]
+    assert features[:, 6].tolist() == [15.0, 15.0]
+
+
+def test_isolation_forest_benchmark_scores_only_test_using_calibration():
+    start = datetime(2026, 1, 1)
+    series = [
+        SeriesPoint(
+            timestamp=start + timedelta(days=index),
+            electricity_kwh=50 if index == 90 else 10 + (index % 5) * 0.2,
+            quality_flag="ok",
+        )
+        for index in range(100)
+    ]
+    training, calibration, test = series[:70], series[70:80], series[80:]
+
+    events = IsolationForestAnomalyDetector(contamination=0.1).detect_benchmark(
+        training,
+        calibration,
+        test,
+    )
+
+    assert all(event.start >= test[0].timestamp for event in events)
+    assert all(event.method == "isolation_forest" for event in events)
+
+
 def test_isolation_forest_uses_history_before_requested_detection_window():
     series = _series_with_electricity_spike()
     detection_start = datetime(2026, 2, 12)

@@ -3,11 +3,12 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 ModuleName = Literal["nilm", "anomaly"]
 EvaluationScenario = Literal["normal", "high_use", "missing", "incomplete"]
+BenchmarkPattern = Literal["spikes", "sustained_high", "low_use", "weather_gas"]
 
 
 class Event(BaseModel):
@@ -62,6 +63,23 @@ class EvaluationRequest(DetectRequest):
     scenario: EvaluationScenario = "high_use"
 
 
+class BenchmarkRequest(BaseModel):
+    dataset: str
+    protocol: Literal["legacy_v1", "corrected_v2"] = "corrected_v2"
+    household: str | None = "Klant 34"
+    all_households: bool = False
+    patterns: list[BenchmarkPattern] = Field(
+        default_factory=lambda: ["spikes", "sustained_high", "low_use", "weather_gas"]
+    )
+    strengths: list[float] = Field(default_factory=lambda: [0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 2.0])
+    seed: int = Field(default=17, ge=0)
+    lookback_days: Literal[1, 7] = 1
+
+
+class SaveBenchmarkRequest(BaseModel):
+    result: dict[str, Any]
+
+
 class EvaluationMetric(BaseModel):
     event_type: str
     precision: float
@@ -96,7 +114,17 @@ class HouseholdContext(BaseModel):
 class ProfileRequest(BaseModel):
     dataset: str
     household: str
+    range_start: datetime | None = None
+    range_end: datetime | None = None
     home: HouseholdContext = Field(default_factory=HouseholdContext)
+
+    @model_validator(mode='after')
+    def check_range(self):
+        if any(v is not None and v.tzinfo is not None for v in (self.range_start, self.range_end)):
+            raise ValueError('Use timezone-naive timestamps matching the source data')
+        if self.range_start and self.range_end and self.range_start > self.range_end:
+            raise ValueError('range_start must not follow range_end')
+        return self
 
 
 class ProfileResponse(BaseModel):
