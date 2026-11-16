@@ -5,15 +5,32 @@ from event_detection.data.catalog import get_series
 
 
 def test_catalog_lists_only_ready_data_as_available():
-    # GridFlex is still planned, while Zonnedael is ready to load.
+    # GridFlex is still planned, while all Zonnedael resolutions are ready.
     datasets = available_datasets()
-    assert {dataset.id for dataset in datasets} == {"gridflex_heeten", "zonnedael"}
+    assert {dataset.id for dataset in datasets} == {
+        "gridflex_heeten",
+        "zonnedael",
+        "zonnedael_hourly",
+        "zonnedael_15min_electricity",
+    }
     assert datasets[0].available is False
 
     zonnedael = next(dataset for dataset in datasets if dataset.id == "zonnedael")
     assert zonnedael.available is True
     assert zonnedael.resolution_minutes == 1440
     assert len(zonnedael.households) == 58
+
+    hourly = next(dataset for dataset in datasets if dataset.id == "zonnedael_hourly")
+    assert hourly.available is True
+    assert hourly.resolution_minutes == 60
+    assert len(hourly.households) == 58
+
+    electricity = next(
+        dataset for dataset in datasets if dataset.id == "zonnedael_15min_electricity"
+    )
+    assert electricity.available is True
+    assert electricity.resolution_minutes == 15
+    assert len(electricity.households) == 58
 
 
 def test_zonnedael_returns_daily_points_and_filters_dates():
@@ -48,3 +65,31 @@ def test_zonnedael_preserves_partial_days_as_quality_data():
     assert partial.timestamp.date().isoformat() == "2013-10-27"
     assert partial.gas_m3 is None
     assert partial.n_gas_hours == 22
+
+
+def test_zonnedael_hourly_returns_interval_points():
+    points = get_series(
+        "zonnedael_hourly",
+        "Klant 34",
+        datetime(2013, 1, 1),
+        datetime(2013, 1, 1, 1),
+    )
+    assert len(points) == 2
+    assert points[0].timestamp == datetime(2013, 1, 1)
+    assert points[0].interval_minutes == 60
+    assert points[0].electricity_kwh == 0.207
+    assert points[0].gas_m3 == 0.0715
+    assert points[0].temp_mean_c == 8.8
+
+
+def test_zonnedael_15min_electricity_returns_electricity_only():
+    points = get_series(
+        "zonnedael_15min_electricity",
+        "Klant 34",
+        datetime(2013, 1, 1),
+        datetime(2013, 1, 1),
+    )
+    assert len(points) == 1
+    assert points[0].interval_minutes == 15
+    assert points[0].electricity_kwh == 0.03
+    assert points[0].gas_m3 is None

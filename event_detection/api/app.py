@@ -1,6 +1,8 @@
 """Standalone HTTP API for event detection."""
 
+from collections import Counter
 from datetime import datetime
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from event_detection.config import settings
 from event_detection.household_profile import build_profile
 from event_detection.data import available_datasets, get_series
-from event_detection.anomaly.placeholder import PlaceholderAnomalyDetector
+from event_detection.anomaly import IsolationForestAnomalyDetector, RNNForecastDetector
 from event_detection.evaluation.matching import match_events
 from event_detection.evaluation.scenarios import load_scenario
 from event_detection.nilm import detector_registry
@@ -22,6 +24,10 @@ from event_detection.schemas import (
 )
 
 app = FastAPI(title=settings.api_title)
+_ANOMALY_DETECTORS = {
+    IsolationForestAnomalyDetector.name: IsolationForestAnomalyDetector(),
+    RNNForecastDetector.name: RNNForecastDetector(),
+}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,6 +35,52 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _get_detector(module: str, method: str):
+    """Resolve one detector from the public module/method pair."""
+    if module == "nilm":
+        return detector_registry.get(method)
+    return _ANOMALY_DETECTORS[method]
+
+
+def _detector_points(
+    dataset: str,
+    household: str,
+    module: str,
+    range_end: datetime | None,
+    range_start: datetime | None,
+):
+    """Load preceding history for anomaly detection windows when available."""
+    if module == "anomaly" and range_start is not None:
+        return get_series(dataset, household, range_end=range_end)
+    return get_series(dataset, household, range_start, range_end)
+
+
+def _detect_with_window(
+    detector,
+    points,
+    module: str,
+    detection_start: datetime | None,
+    lookback_days: int = 1,
+):
+    if isinstance(detector, RNNForecastDetector):
+        return detector.detect(
+            points,
+            detection_start=detection_start,
+            lookback_days=lookback_days,
+        )
+    if module == "anomaly" and detection_start is not None:
+        return detector.detect(points, detection_start=detection_start)
+    return detector.detect(points)
+
+
+def _validate_resolution(detector, points) -> None:
+    if isinstance(detector, RNNForecastDetector) and points and points[0].interval_minutes not in {15, 60}:
+        raise HTTPException(
+            status_code=400,
+            detail="RNN forecast currently supports hourly and 15-minute data only",
+        )
 
 
 @app.get("/")
@@ -67,33 +119,154 @@ def series(
 def detect(request: DetectRequest):
     """Run the selected detector for one household and date range."""
     try:
-        points = get_series(request.dataset, request.household, request.range_start, request.range_end)
+        points = _detector_points(
+            request.dataset,
+            request.household,
+            request.module,
+            request.range_end,
+            request.range_start,
+        )
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    if request.module == "nilm":
-        try:
-            detector = detector_registry.get(request.method)
-        except KeyError as error:
-            raise HTTPException(status_code=400, detail="Unknown NILM method") from error
-    else:
-        detector = PlaceholderAnomalyDetector()
-    return detector.detect(points)
+    try:
+        detector = _get_detector(request.module, request.method)
+    except KeyError as error:
+        detail = "Unknown NILM method" if request.module == "nilm" else "Unknown anomaly method"
+        raise HTTPException(status_code=400, detail=detail) from error
+    _validate_resolution(detector, points)
+    return _detect_with_window(
+        detector,
+        points,
+        request.module,
+        request.range_start,
+        request.lookback_days,
+    )
+
+
+@app.get("/event-summary")
+def event_summary(
+    dataset: str,
+    household: str,
+    module: str = "anomaly",
+    method: str = "isolation_forest",
+    range_start: datetime | None = None,
+    range_end: datetime | None = None,
+    lookback_days: int = 1,
+):
+    """Return detector results together with compact data-quality statistics."""
+    if lookback_days not in {1, 7}:
+        raise HTTPException(status_code=422, detail="lookback_days must be 1 or 7")
+    try:
+        points = _detector_points(dataset, household, module, range_end, range_start)
+        display_points = get_series(dataset, household, range_start, range_end)
+        detector = _get_detector(module, method)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except KeyError as error:
+        detail = "Unknown NILM method" if module == "nilm" else "Unknown anomaly method"
+        raise HTTPException(status_code=400, detail=detail) from error
+
+    _validate_resolution(detector, points)
+    events = _detect_with_window(detector, points, module, range_start, lookback_days)
+    event_counts = Counter(event.type for event in events)
+    quality_counts = Counter(point.quality_flag for point in display_points)
+    test_split = None
+    if isinstance(detector, (IsolationForestAnomalyDetector, RNNForecastDetector)):
+        electricity_points = [
+            point
+            for point in points
+            if point.quality_flag == "ok" and point.electricity_kwh is not None
+        ]
+        training_ratio = getattr(detector, "training_ratio", 0.7)
+        training_count = int(len(electricity_points) * training_ratio)
+        if range_start is not None:
+            requested_training_count = next(
+                (index for index, point in enumerate(electricity_points) if point.timestamp >= range_start),
+                len(electricity_points),
+            )
+            minimum_training_points = (
+                (lookback_days * 1440 // electricity_points[0].interval_minutes)
+                + max(1, 60 // electricity_points[0].interval_minutes)
+                + detector.minimum_training_windows
+                - 1
+                if isinstance(detector, RNNForecastDetector) and electricity_points
+                else detector.minimum_samples
+            )
+            if (
+                requested_training_count >= minimum_training_points
+                and requested_training_count < len(electricity_points)
+            ):
+                training_count = requested_training_count
+        if training_count < len(electricity_points):
+            test_split = {
+                "timestamp": electricity_points[training_count].timestamp,
+                "training_ratio": training_count / len(electricity_points),
+                "training_points": training_count,
+                "detection_points": len(electricity_points) - training_count,
+            }
+    duration_minutes = sum(
+        int((event.end - event.start).total_seconds() / 60)
+        for event in events
+    )
+    return {
+        "dataset": dataset,
+        "household": household,
+        "module": module,
+        "method": method,
+        "lookback_days": lookback_days if isinstance(detector, RNNForecastDetector) else None,
+        "range_start": range_start,
+        "range_end": range_end,
+        "total_points": len(display_points),
+        "valid_points": quality_counts.get("ok", 0),
+        "partial_points": quality_counts.get("partial", 0),
+        "missing_points": quality_counts.get("missing", 0),
+        "event_count": len(events),
+        "events_by_type": dict(sorted(event_counts.items())),
+        "anomalous_duration_minutes": duration_minutes,
+        "test_split": test_split,
+        "events": events,
+    }
+
+
+@app.get("/series-range")
+def series_range(dataset: str, household: str):
+    """Return the recorded date bounds for one dataset and household."""
+    try:
+        points = get_series(dataset, household)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if not points:
+        raise HTTPException(status_code=404, detail="No readings found for this household")
+    return {
+        "dataset": dataset,
+        "household": household,
+        "start": points[0].timestamp,
+        "end": points[-1].timestamp,
+        "start_date": points[0].timestamp.date(),
+        "end_date": points[-1].timestamp.date(),
+        "resolution_minutes": points[0].interval_minutes,
+        "point_count": len(points),
+    }
 
 
 @app.post("/evaluate", response_model=EvaluationResponse)
 def evaluate(request: EvaluationRequest):
-    """Compare the rules with one prepared synthetic scenario."""
+    """Compare the selected detector with one prepared synthetic scenario."""
     if request.dataset != "zonnedael":
         raise HTTPException(status_code=400, detail="Scenario evaluation is only available for Zonnedael")
-    if request.module != "nilm":
-        raise HTTPException(status_code=400, detail="Scenario evaluation requires the NILM rules module")
+    if request.module == "anomaly" and request.method == RNNForecastDetector.name:
+        raise HTTPException(
+            status_code=400,
+            detail="RNN evaluation is not available for the daily-only scenario fixtures",
+        )
     # Scenarios currently contain prepared data for this home only.
     fixture_household = "Klant 34"
     try:
         points, ground_truth, quality = load_scenario(request.scenario, fixture_household)
-        detector = detector_registry.get(request.method)
+        detector = _get_detector(request.module, request.method)
     except (FileNotFoundError, KeyError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        detail = "Unknown NILM method" if request.module == "nilm" else "Unknown anomaly method"
+        raise HTTPException(status_code=400, detail=detail) from error
     # Apply the requested date range to both detections and truth.
     points = [
         point for point in points
@@ -105,7 +278,23 @@ def evaluate(request: EvaluationRequest):
         if (request.range_start is None or event.start >= request.range_start)
         and (request.range_end is None or event.start <= request.range_end)
     ]
-    detected = detector.detect(points)
+    if request.module == "anomaly":
+        # Scenario fixtures use the rules vocabulary; map it for anomaly metrics.
+        event_type_map = {
+            "high_electricity": "unusual_electricity",
+            "high_gas": "unusual_gas",
+        }
+        ground_truth = [
+            event.model_copy(update={"type": event_type_map.get(event.type, event.type)})
+            for event in ground_truth
+        ]
+    detected = _detect_with_window(
+        detector,
+        points,
+        request.module,
+        request.range_start,
+        request.lookback_days,
+    )
     event_types = sorted({event.type for event in detected} | {event.type for event in ground_truth})
     metrics = []
     for event_type in event_types:
@@ -128,7 +317,10 @@ def evaluate(request: EvaluationRequest):
     return EvaluationResponse(
         metrics=metrics,
         tolerance_minutes=request.tolerance_minutes,
-        source=f"synthetic ground truth from Zonnedael scenario '{request.scenario}' for {fixture_household}",
+        source=(
+            f"synthetic ground truth from Zonnedael scenario '{request.scenario}' "
+            f"for {fixture_household} using '{request.method}'"
+        ),
         notes=[
             "Synthetic events are evaluation fixtures, not appliance labels.",
             "Partial, missing, and absent dates are reported as data quality and excluded from detection.",

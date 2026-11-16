@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from csv import DictReader
 from datetime import datetime
+import gzip
 from pathlib import Path
 
 from event_detection.config import settings
@@ -111,6 +112,7 @@ class ZonnedaelLoader(DatasetLoader):
             raise ValueError(f"Unknown Zonnedael quality flag: {quality!r}")
         return SeriesPoint(
             timestamp=datetime.strptime(row["date"], "%Y-%m-%d"),
+            interval_minutes=1440,
             electricity_kwh=self._optional_float(row["electricity_kwh"]),
             gas_m3=self._optional_float(row["gas_m3"]),
             quality_flag=quality,
@@ -123,4 +125,78 @@ class ZonnedaelLoader(DatasetLoader):
             woning_type=row["woning_type"] or None,
             bouwjaar_band=row["bouwjaar_band"] or None,
             gezinssituatie=row["gezinssituatie"] or None,
+        )
+
+
+class ZonnedaelIntervalLoader(DatasetLoader):
+    """Load one of Zonnedael's compressed interval-level exports."""
+
+    _hourly_columns = {
+        "household_id",
+        "timestamp",
+        "electricity_kwh",
+        "gas_m3",
+        "n_elec_intervals",
+        "quality_flag",
+        "temp_c",
+    }
+    _electricity_columns = {"household_id", "timestamp", "electricity_kwh", "quality_flag"}
+    _filename: str
+    _interval_minutes: int
+
+    def __init__(self, filename: str, interval_minutes: int, data_root: str | Path | None = None) -> None:
+        root = Path(data_root or settings.data_root)
+        if not root.is_absolute():
+            root = Path(__file__).resolve().parents[2] / root
+        self.data_root = root
+        self._filename = filename
+        self._interval_minutes = interval_minutes
+        self._required_columns = (
+            self._hourly_columns if interval_minutes == 60 else self._electricity_columns
+        )
+        self._included_households = ZonnedaelLoader(root).included_households
+
+    @property
+    def included_households(self) -> set[str]:
+        return self._included_households.copy()
+
+    def load(self, household: str) -> Sequence[SeriesPoint]:
+        if household not in self._included_households:
+            raise ValueError(f"Household is not included in Zonnedael data: {household}")
+
+        data_path = self.data_root / self._filename
+        try:
+            with gzip.open(data_path, mode="rt", newline="", encoding="utf-8") as file:
+                rows = DictReader(file)
+                columns = set(rows.fieldnames or ())
+                missing = self._required_columns - columns
+                if missing:
+                    raise ValueError(f"Zonnedael data is missing columns: {sorted(missing)}")
+                points = [
+                    self._row_to_point(row)
+                    for row in rows
+                    if row["household_id"] == household
+                ]
+        except FileNotFoundError as error:
+            raise FileNotFoundError(f"Zonnedael interval file not found: {data_path}") from error
+        return sorted(points, key=lambda point: point.timestamp)
+
+    def _row_to_point(self, row: dict[str, str]) -> SeriesPoint:
+        quality = row["quality_flag"].strip()
+        if quality not in {"ok", "partial", "missing"}:
+            raise ValueError(f"Unknown Zonnedael quality flag: {quality!r}")
+        return SeriesPoint(
+            timestamp=datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M"),
+            interval_minutes=self._interval_minutes,
+            electricity_kwh=ZonnedaelLoader._optional_float(row["electricity_kwh"]),
+            gas_m3=ZonnedaelLoader._optional_float(row.get("gas_m3", "")),
+            quality_flag=quality,
+            n_elec_intervals=ZonnedaelLoader._optional_int(row.get("n_elec_intervals", "")),
+            n_gas_hours=1 if "gas_m3" in row else None,
+            temp_mean_c=ZonnedaelLoader._optional_float(row.get("temp_c", "")),
+            hdd18=(
+                max(0.0, 18.0 - float(row["temp_c"]))
+                if row.get("temp_c", "").strip()
+                else None
+            ),
         )

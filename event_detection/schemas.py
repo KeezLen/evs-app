@@ -32,6 +32,7 @@ class DatasetInfo(BaseModel):
 
 class SeriesPoint(BaseModel):
     timestamp: datetime
+    interval_minutes: int = Field(default=1440, gt=0)
     electricity_kwh: float | None = None
     gas_m3: float | None = None
     quality_flag: Literal["ok", "partial", "missing"]
@@ -53,10 +54,11 @@ class DetectRequest(BaseModel):
     range_end: datetime | None = None
     module: ModuleName
     method: str = "rules"
+    lookback_days: Literal[1, 7] = 1
 
 
 class EvaluationRequest(DetectRequest):
-    tolerance_minutes: int = Field(default=15, ge=0)
+    tolerance_minutes: int = Field(default=1440, ge=0)
     scenario: EvaluationScenario = "high_use"
 
 
