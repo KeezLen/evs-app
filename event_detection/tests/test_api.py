@@ -1,3 +1,5 @@
+from threading import Event, Thread
+
 from fastapi.testclient import TestClient
 
 import event_detection.api.app as api_module
@@ -189,6 +191,49 @@ def test_all_household_benchmark_queues_progress_job(monkeypatch):
     assert status.json()["status"] in {"queued", "running", "completed"}
 
 
+def test_benchmark_job_status_is_a_stable_snapshot(monkeypatch):
+    second_started = Event()
+    continue_job = Event()
+
+    def run_household(dataset, household, patterns, seed, weather_gas_enabled, lookback_days, strengths, protocol):
+        if household == "B":
+            second_started.set()
+            assert continue_job.wait(timeout=10)
+            raise ValueError("household failed")
+        return {"household": household, "methods": []}
+
+    monkeypatch.setattr(api_module, "run_household_benchmark", run_household)
+    monkeypatch.setattr(api_module, "_persist_benchmark_result", lambda result, source: {"id": "saved"})
+    job_id = "snapshot-test"
+    monkeypatch.setitem(api_module._BENCHMARK_JOBS, job_id, {"job_id": job_id, "status": "queued"})
+    worker = Thread(
+        target=api_module._run_benchmark_job,
+        args=(
+            job_id,
+            api_module.BenchmarkRequest(dataset="zonnedael", all_households=True),
+            ["A", "B", "C"],
+            {"weather_gas_enabled": False},
+        ),
+    )
+    worker.start()
+    try:
+        assert second_started.wait(timeout=10)
+        snapshot = api_module.benchmark_job(job_id)
+        assert snapshot["completed_households"] == 1
+    finally:
+        continue_job.set()
+        worker.join(timeout=10)
+    assert not worker.is_alive()
+    assert snapshot["status"] == "running"
+    assert snapshot["results"] == [{"household": "A", "methods": []}]
+    assert snapshot["errors"] == []
+    response = TestClient(app).get(f"/benchmark/jobs/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["completed_households"] == 3
+    assert response.json()["errors"] == [{"household": "B", "error": "household failed"}]
+
+
 def test_completed_background_benchmark_is_saved(monkeypatch, tmp_path):
     monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
     monkeypatch.setattr(
@@ -242,3 +287,66 @@ def test_manual_saved_run_can_be_listed_and_retrieved(monkeypatch, tmp_path):
     assert loaded.status_code == 200
     assert loaded.json()["result"] == result
     assert client.get("/benchmark/saved/not-an-id").status_code == 404
+
+
+def test_saved_run_list_includes_settings_from_new_and_older_results(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+    client = TestClient(app)
+    household = {
+        "dataset": "zonnedael_hourly",
+        "household": "Klant 34",
+        "seed": 17,
+        "lookback_days": 7,
+        "patterns": ["spikes"],
+        "strengths": [0.3],
+    }
+    older = client.post("/benchmark/saved", json={"result": {
+        "status": "completed", "results": [household],
+    }}).json()
+    newer = client.post("/benchmark/saved", json={"result": {
+        "status": "completed", "results": [], "seed": 0, "lookback_days": 1,
+        "patterns": ["low_use"], "strengths": [0.8],
+    }}).json()
+    missing = client.post("/benchmark/saved", json={"result": {
+        "status": "completed", "results": [],
+    }}).json()
+
+    rows = {row["id"]: row for row in client.get("/benchmark/saved").json()}
+    assert (rows[older["id"]]["seed"], rows[older["id"]]["lookback_days"]) == (17, 7)
+    assert rows[older["id"]]["patterns"] == ["spikes"]
+    assert rows[older["id"]]["strengths"] == [0.3]
+    assert (rows[newer["id"]]["seed"], rows[newer["id"]]["lookback_days"]) == (0, 1)
+    assert rows[newer["id"]]["patterns"] == ["low_use"]
+    assert rows[newer["id"]]["strengths"] == [0.8]
+    assert rows[missing["id"]]["lookback_days"] is None
+
+
+def test_delete_saved_run_removes_only_selected_result(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+    client = TestClient(app)
+    result = {"status": "completed", "results": []}
+    first = client.post("/benchmark/saved", json={"result": result}).json()["id"]
+    second = client.post("/benchmark/saved", json={"result": result}).json()["id"]
+
+    response = client.delete(f"/benchmark/saved/{first}")
+
+    assert response.status_code == 200
+    assert response.json() == {"id": first, "deleted": True}
+    assert client.get(f"/benchmark/saved/{first}").status_code == 404
+    assert client.delete(f"/benchmark/saved/{first}").status_code == 404
+    assert client.delete("/benchmark/saved/not-an-id").status_code == 404
+    assert [row["id"] for row in client.get("/benchmark/saved").json()] == [second]
+    assert client.get(f"/benchmark/saved/{second}").status_code == 200
+
+
+def test_delete_saved_run_reports_filesystem_errors(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+
+    def fail_unlink(path):
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(type(tmp_path), "unlink", fail_unlink)
+    response = TestClient(app).delete("/benchmark/saved/abc123")
+
+    assert response.status_code == 500
+    assert "access denied" in response.json()["detail"]

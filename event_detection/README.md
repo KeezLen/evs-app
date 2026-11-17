@@ -84,8 +84,10 @@ visible as breaks in the chart.
 - `GET /benchmark/saved` lists saved runs; `GET /benchmark/saved/{result_id}`
   returns a complete saved result. `POST /benchmark/saved` accepts
   `{"result": <completed benchmark response>}` to save a result already
-  displayed in the benchmark page. The page also provides saved-run loading
-  and manual-save controls. A save failure is reported on the run response.
+  displayed in the benchmark page. `DELETE /benchmark/saved/{result_id}` deletes
+  a saved run. The page shows saved-run settings and provides loading,
+  manual-save, and confirmed deletion controls. A save failure is reported on
+  the run response.
 - `POST /evaluate` uses the same request plus `tolerance_minutes` and a
   `scenario`.
 

@@ -50,6 +50,7 @@ th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacin
 .saved-controls select { flex:1 1 320px; }
 .saved-controls button { width:auto; }
 .saved-status { align-self:center; color:var(--muted); font-size:12px; }
+.saved-details { padding:0 16px 14px; color:var(--muted); font-size:13px; line-height:1.5; }
 .timeline-wrap { overflow-x:auto; padding:0 16px 16px; }
 svg { display:block; min-width:720px; width:100%; height:240px; background:var(--canvas); border-radius:6px; }
 .axis { stroke:#aabaae; stroke-width:1; }
@@ -103,9 +104,11 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
       <label for="saved-runs">Available results<select id="saved-runs"><option value="">No saved runs loaded</option></select></label>
       <button id="open-saved" class="secondary" disabled>Open saved run</button>
       <button id="refresh-saved" class="secondary">Refresh list</button>
-      <button id="save-current" disabled>Save displayed result</button>
+      <button id="delete-saved" class="secondary" disabled>Delete saved run</button>
+      <button id="save-current" hidden disabled>Save displayed result</button>
       <span id="saved-status" class="saved-status" aria-live="polite">No result selected.</span>
     </div>
+    <div id="saved-details" class="saved-details">Select a saved run to see its settings.</div>
   </section>
   <section id="progress-panel" class="panel progress-wrap" hidden>
     <div class="progress-top"><strong id="progress-label">Benchmark queued</strong><span id="progress-count">0 / 0</span></div>
@@ -139,6 +142,7 @@ let datasets = [];
 let weatherAudit = null;
 let benchmarkResponse = null;
 let currentSavedResultId = null;
+let savedRuns = [];
 
 function setStatus(message, error = false) {
   $('status').textContent = message;
@@ -152,21 +156,44 @@ function methodLabel(value) {
   if (value.startsWith('random_budget_')) return 'Random at ' + value.slice('random_budget_'.length) + ' alert budget';
   return value;
 }
-function renderSavedRuns(rows) {
+function formatSavedTime(value) {
+  if (!value) return 'Unknown date';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, {
+    year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit',
+  });
+}
+function updateSavedSelection() {
+  const selected = savedRuns.find((row) => row.id === $('saved-runs').value);
+  $('open-saved').disabled = !selected;
+  $('delete-saved').disabled = !selected;
+  if (!selected) {
+    $('saved-details').textContent = 'Select a saved run to see its settings.';
+    return;
+  }
+  const lookback = selected.lookback_days == null ? 'Unknown' : selected.lookback_days === 1 ? '24 hours' : selected.lookback_days + ' days';
+  const patterns = selected.patterns?.length ? selected.patterns.map((pattern) => pattern.replace(/_/g, ' ')).join(', ') : 'Unknown';
+  const strengths = selected.strengths?.length ? selected.strengths.map((strength) => Math.round(strength * 100) + '%').join(', ') : 'Unknown';
+  $('saved-details').textContent = 'Saved: ' + formatSavedTime(selected.saved_at) +
+    ' · Lookback: ' + lookback + ' · Random seed: ' + (selected.seed ?? 'Unknown') +
+    ' · Patterns: ' + patterns + ' · Strengths: ' + strengths;
+}
+function renderSavedRuns(rows, preferredId = null) {
+  savedRuns = rows;
   const select = $('saved-runs');
-  const selected = select.value;
+  const selected = preferredId || select.value;
   select.innerHTML = '<option value="">Select a saved run</option>' + rows.map((row) => {
-    const label = [row.saved_at, row.dataset, row.protocol, row.households_completed + '/' + row.households_requested + ' homes'].filter(Boolean).join(' · ');
+    const label = [formatSavedTime(row.saved_at), row.dataset, row.protocol, row.households_completed + '/' + row.households_requested + ' homes'].filter(Boolean).join(' · ');
     return '<option value="' + escapeHtml(row.id) + '">' + escapeHtml(label) + '</option>';
   }).join('');
   if (rows.some((row) => row.id === selected)) select.value = selected;
-  $('open-saved').disabled = !select.value;
+  updateSavedSelection();
 }
-async function refreshSavedRuns() {
+async function refreshSavedRuns(preferredId = null) {
   const response = await fetch(API + '/benchmark/saved');
   if (!response.ok) throw new Error('Saved runs HTTP ' + response.status);
   const rows = await response.json();
-  renderSavedRuns(rows);
+  renderSavedRuns(rows, preferredId);
   $('saved-status').textContent = rows.length + ' saved run' + (rows.length === 1 ? '' : 's');
 }
 function pct(value) { return value == null ? 'N/A' : (value * 100).toFixed(1) + '%'; }
@@ -267,8 +294,8 @@ function drawTimeline(result, methodName) {
 function renderResult(response, savedId = null) {
   benchmarkResponse = response;
   currentSavedResultId = savedId || response.saved_result_id || response.id || null;
+  $('save-current').hidden = Boolean(currentSavedResultId) || !response.results?.length;
   $('save-current').disabled = !response.results?.length || Boolean(currentSavedResultId);
-  $('save-current').textContent = currentSavedResultId ? 'Result saved' : 'Save displayed result';
   $('saved-status').textContent = currentSavedResultId ? 'Saved result ' + currentSavedResultId : 'This displayed result is not saved yet.';
   renderAggregate(response.aggregate || []);
   const results = response.results || [];
@@ -288,13 +315,36 @@ async function saveDisplayedRun() {
     if (!response.ok) throw new Error('Save failed: ' + (await response.text()).slice(0,200));
     const saved = await response.json();
     currentSavedResultId = saved.id;
-    $('save-current').textContent = 'Result saved';
+    $('save-current').hidden = true;
     $('saved-status').textContent = 'Saved result ' + saved.id;
-    await refreshSavedRuns();
+    await refreshSavedRuns(saved.id);
     setStatus('Displayed benchmark result saved.');
   } catch (error) {
     $('save-current').disabled = false;
     setStatus(error.message, true);
+  }
+}
+async function deleteSavedRun() {
+  const resultId = $('saved-runs').value;
+  if (!resultId || !window.confirm('Delete this saved benchmark run? This cannot be undone.')) return;
+  $('delete-saved').disabled = true;
+  try {
+    const response = await fetch(API + '/benchmark/saved/' + encodeURIComponent(resultId), {method:'DELETE'});
+    if (!response.ok) throw new Error('Delete failed: ' + (await response.text()).slice(0,200));
+    if (currentSavedResultId === resultId) {
+      currentSavedResultId = null;
+      delete benchmarkResponse.id;
+      delete benchmarkResponse.saved_result_id;
+      $('save-current').hidden = !benchmarkResponse.results?.length;
+      $('save-current').disabled = !benchmarkResponse.results?.length;
+    }
+    await refreshSavedRuns();
+    $('saved-status').textContent = 'Saved run deleted.';
+    setStatus('Saved benchmark run deleted.');
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    updateSavedSelection();
   }
 }
 async function openSavedRun() {
@@ -349,7 +399,7 @@ async function runBenchmark() {
     const result = await response.json();
     if (result.job_id) await pollJob(result.job_id);
     else { $('progress-label').textContent = 'Benchmark complete'; $('progress-count').textContent = '1 / 1'; $('progress-fill').style.width = '100%'; renderResult(result); setStatus('Benchmark complete.'); }
-    await refreshSavedRuns();
+    await refreshSavedRuns(currentSavedResultId);
     const completed = result.job_id ? benchmarkResponse : result;
     if (completed?.save_error) setStatus('Benchmark complete, but saving failed: ' + completed.save_error, true);
   } catch (error) { setStatus(error.message, true); }
@@ -377,8 +427,9 @@ document.querySelectorAll('.patterns[aria-label="Injected event patterns"] input
 $('all-households').addEventListener('change', () => { $('household-label').hidden = $('all-households').checked; });
 $('run').addEventListener('click', runBenchmark);
 $('save-current').addEventListener('click', saveDisplayedRun);
+$('delete-saved').addEventListener('click', deleteSavedRun);
 $('refresh-saved').addEventListener('click', () => refreshSavedRuns().catch(error => setStatus(error.message,true)));
-$('saved-runs').addEventListener('change', () => { $('open-saved').disabled = !$('saved-runs').value; });
+$('saved-runs').addEventListener('change', updateSavedSelection);
 $('open-saved').addEventListener('click', () => openSavedRun().catch(error => setStatus(error.message,true)));
 $('result-household').addEventListener('change', () => renderHousehold(benchmarkResponse?.results?.[Number($('result-household').value)]));
 $('timeline-method').addEventListener('change', () => { const result=benchmarkResponse?.results?.[Number($('result-household').value)] || benchmarkResponse?.results?.[0]; if(result) drawTimeline(result,$('timeline-method').value); });
