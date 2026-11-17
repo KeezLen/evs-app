@@ -389,8 +389,8 @@ def _run_benchmark_job(
             _BENCHMARK_JOBS[job_id].update({
                 "completed_households": index + 1,
                 "current_household": household,
-                "results": results,
-                "errors": errors,
+                "results": results.copy(),
+                "errors": errors.copy(),
             })
     completed_job = {
         "job_id": job_id,
@@ -501,7 +501,7 @@ def benchmark_job(job_id: str):
         job = _BENCHMARK_JOBS.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Benchmark job not found")
-        return job
+        return job.copy()
 
 
 @app.get("/benchmark/saved")

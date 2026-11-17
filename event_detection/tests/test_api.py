@@ -1,3 +1,5 @@
+from threading import Event, Thread
+
 from fastapi.testclient import TestClient
 
 import event_detection.api.app as api_module
@@ -187,6 +189,49 @@ def test_all_household_benchmark_queues_progress_job(monkeypatch):
     assert status.status_code == 200
     assert status.json()["total_households"] == 58
     assert status.json()["status"] in {"queued", "running", "completed"}
+
+
+def test_benchmark_job_status_is_a_stable_snapshot(monkeypatch):
+    second_started = Event()
+    continue_job = Event()
+
+    def run_household(dataset, household, patterns, seed, weather_gas_enabled, lookback_days, strengths, protocol):
+        if household == "B":
+            second_started.set()
+            assert continue_job.wait(timeout=10)
+            raise ValueError("household failed")
+        return {"household": household, "methods": []}
+
+    monkeypatch.setattr(api_module, "run_household_benchmark", run_household)
+    monkeypatch.setattr(api_module, "_persist_benchmark_result", lambda result, source: {"id": "saved"})
+    job_id = "snapshot-test"
+    monkeypatch.setitem(api_module._BENCHMARK_JOBS, job_id, {"job_id": job_id, "status": "queued"})
+    worker = Thread(
+        target=api_module._run_benchmark_job,
+        args=(
+            job_id,
+            api_module.BenchmarkRequest(dataset="zonnedael", all_households=True),
+            ["A", "B", "C"],
+            {"weather_gas_enabled": False},
+        ),
+    )
+    worker.start()
+    try:
+        assert second_started.wait(timeout=10)
+        snapshot = api_module.benchmark_job(job_id)
+        assert snapshot["completed_households"] == 1
+    finally:
+        continue_job.set()
+        worker.join(timeout=10)
+    assert not worker.is_alive()
+    assert snapshot["status"] == "running"
+    assert snapshot["results"] == [{"household": "A", "methods": []}]
+    assert snapshot["errors"] == []
+    response = TestClient(app).get(f"/benchmark/jobs/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["completed_households"] == 3
+    assert response.json()["errors"] == [{"household": "B", "error": "household failed"}]
 
 
 def test_completed_background_benchmark_is_saved(monkeypatch, tmp_path):
