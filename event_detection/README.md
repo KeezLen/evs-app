@@ -7,6 +7,19 @@ forecast anomaly detectors are implemented.
 
 ## Run
 
+Run these commands from the repository root (`evs-app`).
+
+**On macOS or Linux:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn event_detection.api.app:app --reload
+```
+
+**On Windows (PowerShell):**
+
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -14,8 +27,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn event_detection.api.app:app --reload
 ```
 
-Run these commands from the repository root (`evs-app`). If PowerShell blocks
-the activation script, use the virtual environment directly instead:
+If PowerShell blocks the activation script on Windows, use the virtual environment directly instead:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
