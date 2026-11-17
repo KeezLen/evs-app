@@ -48,6 +48,21 @@ _BENCHMARK_JOBS_LOCK = RLock()
 _BENCHMARK_RESULT_DIR = Path(__file__).resolve().parents[2] / "benchmark_results"
 
 
+def _saved_benchmark_metadata(record: dict) -> dict:
+    metadata = {key: record.get(key) for key in (
+        "id", "saved_at", "source", "status", "dataset", "protocol", "seed",
+        "households_completed", "households_requested", "error_count",
+    )}
+    result = record.get("result", {})
+    first_result = next(iter(result.get("results", [])), {})
+    for key in ("seed", "lookback_days", "patterns", "strengths"):
+        if metadata.get(key) is None:
+            metadata[key] = result.get(key)
+        if metadata[key] is None:
+            metadata[key] = first_result.get(key)
+    return metadata
+
+
 def _persist_benchmark_result(result: dict, source: str) -> dict:
     """Atomically store a completed benchmark result and return its index metadata."""
     result_data = jsonable_encoder(result)
@@ -72,16 +87,17 @@ def _persist_benchmark_result(result: dict, source: str) -> dict:
     temporary = _BENCHMARK_RESULT_DIR / f".{result_id}.tmp"
     temporary.write_text(json.dumps(record, indent=2, ensure_ascii=True), encoding="utf-8")
     temporary.replace(target)
-    return {key: record[key] for key in (
-        "id", "saved_at", "source", "status", "dataset", "protocol", "seed",
-        "households_completed", "households_requested", "error_count",
-    )}
+    return _saved_benchmark_metadata(record)
+
+
+def _saved_benchmark_path(result_id: str) -> Path:
+    if not result_id or any(character not in "0123456789abcdef" for character in result_id.lower()):
+        raise HTTPException(status_code=404, detail="Saved benchmark result not found")
+    return _BENCHMARK_RESULT_DIR / f"{result_id}.json"
 
 
 def _read_saved_benchmark_result(result_id: str) -> dict:
-    if not result_id or any(character not in "0123456789abcdef" for character in result_id.lower()):
-        raise HTTPException(status_code=404, detail="Saved benchmark result not found")
-    path = _BENCHMARK_RESULT_DIR / f"{result_id}.json"
+    path = _saved_benchmark_path(result_id)
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as error:
@@ -93,10 +109,7 @@ def _list_saved_benchmark_results() -> list[dict]:
         return []
     records = [json.loads(path.read_text(encoding="utf-8")) for path in _BENCHMARK_RESULT_DIR.glob("*.json")]
     records.sort(key=lambda record: record.get("saved_at", ""), reverse=True)
-    return [{key: record.get(key) for key in (
-        "id", "saved_at", "source", "status", "dataset", "protocol", "seed",
-        "households_completed", "households_requested", "error_count",
-    )} for record in records]
+    return [_saved_benchmark_metadata(record) for record in records]
 
 
 def _get_detector(module: str, method: str):
@@ -514,6 +527,19 @@ def saved_benchmarks():
 def saved_benchmark(result_id: str):
     """Return a saved benchmark run and all its household results."""
     return _read_saved_benchmark_result(result_id)
+
+
+@app.delete("/benchmark/saved/{result_id}")
+def delete_saved_benchmark(result_id: str):
+    """Delete one saved benchmark run."""
+    path = _saved_benchmark_path(result_id)
+    try:
+        path.unlink()
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Saved benchmark result not found") from error
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Could not delete benchmark result: {error}") from error
+    return {"id": result_id, "deleted": True}
 
 
 @app.post("/benchmark/saved")

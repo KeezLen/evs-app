@@ -287,3 +287,66 @@ def test_manual_saved_run_can_be_listed_and_retrieved(monkeypatch, tmp_path):
     assert loaded.status_code == 200
     assert loaded.json()["result"] == result
     assert client.get("/benchmark/saved/not-an-id").status_code == 404
+
+
+def test_saved_run_list_includes_settings_from_new_and_older_results(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+    client = TestClient(app)
+    household = {
+        "dataset": "zonnedael_hourly",
+        "household": "Klant 34",
+        "seed": 17,
+        "lookback_days": 7,
+        "patterns": ["spikes"],
+        "strengths": [0.3],
+    }
+    older = client.post("/benchmark/saved", json={"result": {
+        "status": "completed", "results": [household],
+    }}).json()
+    newer = client.post("/benchmark/saved", json={"result": {
+        "status": "completed", "results": [], "seed": 0, "lookback_days": 1,
+        "patterns": ["low_use"], "strengths": [0.8],
+    }}).json()
+    missing = client.post("/benchmark/saved", json={"result": {
+        "status": "completed", "results": [],
+    }}).json()
+
+    rows = {row["id"]: row for row in client.get("/benchmark/saved").json()}
+    assert (rows[older["id"]]["seed"], rows[older["id"]]["lookback_days"]) == (17, 7)
+    assert rows[older["id"]]["patterns"] == ["spikes"]
+    assert rows[older["id"]]["strengths"] == [0.3]
+    assert (rows[newer["id"]]["seed"], rows[newer["id"]]["lookback_days"]) == (0, 1)
+    assert rows[newer["id"]]["patterns"] == ["low_use"]
+    assert rows[newer["id"]]["strengths"] == [0.8]
+    assert rows[missing["id"]]["lookback_days"] is None
+
+
+def test_delete_saved_run_removes_only_selected_result(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+    client = TestClient(app)
+    result = {"status": "completed", "results": []}
+    first = client.post("/benchmark/saved", json={"result": result}).json()["id"]
+    second = client.post("/benchmark/saved", json={"result": result}).json()["id"]
+
+    response = client.delete(f"/benchmark/saved/{first}")
+
+    assert response.status_code == 200
+    assert response.json() == {"id": first, "deleted": True}
+    assert client.get(f"/benchmark/saved/{first}").status_code == 404
+    assert client.delete(f"/benchmark/saved/{first}").status_code == 404
+    assert client.delete("/benchmark/saved/not-an-id").status_code == 404
+    assert [row["id"] for row in client.get("/benchmark/saved").json()] == [second]
+    assert client.get(f"/benchmark/saved/{second}").status_code == 200
+
+
+def test_delete_saved_run_reports_filesystem_errors(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+
+    def fail_unlink(path):
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(type(tmp_path), "unlink", fail_unlink)
+    response = TestClient(app).delete("/benchmark/saved/abc123")
+
+    assert response.status_code == 500
+    assert "access denied" in response.json()["detail"]
