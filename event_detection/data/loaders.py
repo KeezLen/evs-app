@@ -19,12 +19,7 @@ class DatasetLoader(ABC):
         """Load and normalize one household."""
 
 
-class GridFlexLoader(DatasetLoader):
-    dataset_id = "gridflex_heeten"
-
-    def load(self, household: str) -> Sequence[SeriesPoint]:
-        del household
-        raise NotImplementedError("GridFlex source adapter is pending")
+from .gridflex import GridFlexLoader
 
 
 class ZonnedaelLoader(DatasetLoader):

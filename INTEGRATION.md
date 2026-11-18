@@ -82,6 +82,18 @@ validation before tenant-facing use.
   inferred without an expected observation window or enrollment date.
 - Interval exports do not carry the daily file's house metadata. Missing metadata
   stays unknown; a future canonical household-context source should join by ID.
-- GridFlex is listed but its adapter remains unavailable.
+- GridFlex is now available through its daily grid-import adapter when the local database is configured. Minute completeness and weather remain unresolved; see README.
 - The local service still exposes the existing permissive development CORS and
   research data access. Pilot access controls are unfinished.
+
+
+## 18 November follow-up
+
+Latest benchmark updates merged through `d82c56e`. Added GridFlex daily adapter,
+explainable per-fuel pattern labels, official postcode/address/BAG lookup and an
+optional EP-Online v5 certificate adapter. See README for fields, thresholds,
+missing-key behaviour and source limitations. Building lookup is separate from
+consumption profiling; a real address is linked only after explicit confirmation.
+Pattern labels still require empirical calibration and do not establish model
+accuracy. Upcoming priorities remain real-world validation, shared tariff/savings
+logic, durable advice-exposure records, authentication and consent enforcement.

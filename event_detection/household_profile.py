@@ -6,6 +6,7 @@ from math import isfinite
 from statistics import mean, median
 
 from event_detection.schemas import SeriesPoint
+from event_detection.profile_patterns import pattern_labels
 
 FUELS = ('electricity_kwh', 'gas_m3')
 MIN_DAYS = 30
@@ -13,7 +14,7 @@ MIN_COVERAGE = 0.8
 
 
 def valid(row: SeriesPoint, fuel: str):
-    count, full = ('n_elec_intervals', 96) if fuel == 'electricity_kwh' else ('n_gas_hours', 24)
+    count, full = ('n_elec_intervals', row.expected_elec_intervals) if fuel == 'electricity_kwh' else ('n_gas_hours', row.expected_gas_hours)
     value = getattr(row, fuel)
     return (row.interval_minutes == 1440 and row.quality_flag in ('ok', 'partial')
             and getattr(row, count) == full and value is not None
@@ -111,6 +112,8 @@ def build_profile(rows: Sequence[SeriesPoint], household_id: str, home=None):
                                        if value is not None and value == highest],
             'peak_hour': None, 'night_usage': None,
         }
+    for fuel in FUELS:
+        fuels[fuel]['patterns'] = pattern_labels(selected, fuel, fuels[fuel])
     metadata, conflicts = {}, []
     for key in ('woning_type', 'bouwjaar_band', 'gezinssituatie'):
         values = {getattr(r, key) for r in rows if getattr(r, key)}
@@ -120,7 +123,7 @@ def build_profile(rows: Sequence[SeriesPoint], household_id: str, home=None):
     temperatures = [r.temp_mean_c for r in selected if r.temp_mean_c is not None and isfinite(r.temp_mean_c)]
     seasons = ('winter', 'spring', 'summer', 'autumn')
     return {
-        'schema_version': '0.2.0', 'household_id': household_id,
+        'schema_version': '0.3.0', 'household_id': household_id,
         'period': {'start': str(start), 'end': str(end), 'calendar_days': span, 'observed_days': len(selected)},
         'status': 'ready' if any(f['status'] == 'ready' for f in fuels.values()) else 'insufficient_history',
         'fuels': fuels, 'home': {**metadata, **(home or {})}, 'metadata_conflicts': conflicts,
@@ -129,6 +132,9 @@ def build_profile(rows: Sequence[SeriesPoint], household_id: str, home=None):
                     'valid_days': len(temperatures)},
         'seasons': sorted({seasons[(r.timestamp.month % 12) // 3] for r in selected}),
         'resolution': 'daily', 'source_interval_minutes': rows[0].interval_minutes,
+        'electricity_basis': sorted({r.electricity_basis for r in rows}),
+        'source_notes': sorted({note for r in rows for note in r.source_notes}),
+        'observed_export_days': sum(r.electricity_export_kwh is not None and r.electricity_export_kwh > 0 for r in rows),
         'readiness_policy': {'minimum_valid_days': MIN_DAYS, 'minimum_coverage': MIN_COVERAGE, 'validated': False},
         'limitations': ['Daily summaries do not identify appliances or occupancy.',
                         'Readiness is data sufficiency, not validated prediction accuracy.',

@@ -14,6 +14,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from event_detection.product import analyze_household
+from event_detection.building_lookup import search_addresses, lookup_building, LookupUnavailable
+from event_detection.schemas import AddressSearchRequest, BuildingLookupRequest
 
 from event_detection.config import settings
 from event_detection.household_profile import build_profile
@@ -643,7 +645,7 @@ def profile_build(request: ProfileRequest):
     """Summarize the same normalized daily series used by event detection."""
     try:
         points = get_series(request.dataset, request.household, request.range_start, request.range_end)
-        profile = build_profile(points, request.household, request.home.model_dump())
+        profile = build_profile(points, request.household, _profile_home(request))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return ProfileResponse(dataset=request.dataset, profile=profile)
@@ -654,7 +656,7 @@ def product_analyze(request: ProfileRequest):
     """One source selection feeds the profile and rules; UI ranks the existing tips."""
     try:
         points = get_series(request.dataset, request.household, request.range_start, request.range_end)
-        result = analyze_household(points, request.household, request.home.model_dump())
+        result = analyze_household(points, request.household, _profile_home(request))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {'dataset': request.dataset, **result}
@@ -673,3 +675,37 @@ def analyst_app():
 @app.get('/event_benchmark.html', include_in_schema=False)
 def benchmark_app():
     return FileResponse(Path(__file__).resolve().parents[2] / 'event_benchmark.html')
+
+
+def _profile_home(request):
+    home = request.home.model_dump()
+    if request.building_bag_id:
+        try:
+            building = lookup_building(request.building_bag_id)
+        except LookupUnavailable as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        for field in ('energy_label', 'floor_area_m2'):
+            if home[field] is None:
+                home[field] = building.get(field)
+        home['building_context'] = building
+    return home
+
+
+@app.post('/homes/search')
+def home_search(request: AddressSearchRequest):
+    try:
+        return search_addresses(request.postcode, request.house_number)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except LookupUnavailable as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@app.post('/homes/lookup')
+def home_lookup(request: BuildingLookupRequest):
+    try:
+        return lookup_building(request.bag_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except LookupUnavailable as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error

@@ -1,0 +1,10 @@
+{
+  "source": "https://drive.google.com/file/d/1ek8nDKnghBds4xGPV1C84nbuc1148ccf/view",
+  "downloaded_on": "2026-11-18",
+  "bytes": 1544912896,
+  "sha256": "70a65dd3d495092298e887a2cd387c205bb854a42ead5082b1c0547f6c6e5236",
+  "sqlite_quick_check": "ok",
+  "rows": 62533683,
+  "households": 76,
+  "local_path": "local_data/gridflex/gridflex.db"
+}

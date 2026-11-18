@@ -2,7 +2,8 @@
 
 This is a standalone FastAPI boundary for the Energieverdienspel dashboard.
 Zonnedael is available as validated daily, hourly, and 15-minute electricity
-data. GridFlex remains unavailable; the rules, Isolation Forest, and RNN
+data. GridFlex daily grid import is available when its local SQLite database
+is configured (see the repository README); the rules, Isolation Forest, and RNN
 forecast anomaly detectors are implemented.
 
 ## Run

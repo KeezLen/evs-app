@@ -34,6 +34,11 @@ class DatasetInfo(BaseModel):
 class SeriesPoint(BaseModel):
     timestamp: datetime
     interval_minutes: int = Field(default=1440, gt=0)
+    expected_elec_intervals: int = Field(default=96, gt=0)
+    expected_gas_hours: int = Field(default=24, gt=0)
+    electricity_basis: Literal['consumption', 'grid_import'] = 'consumption'
+    electricity_export_kwh: float | None = None
+    source_notes: list[str] = Field(default_factory=list)
     electricity_kwh: float | None = None
     gas_m3: float | None = None
     quality_flag: Literal["ok", "partial", "missing"]
@@ -117,9 +122,13 @@ class ProfileRequest(BaseModel):
     range_start: datetime | None = None
     range_end: datetime | None = None
     home: HouseholdContext = Field(default_factory=HouseholdContext)
+    building_bag_id: str | None = Field(default=None, pattern=r'^\d{16}$')
+    building_confirmed: bool = False
 
     @model_validator(mode='after')
     def check_range(self):
+        if self.building_bag_id and not self.building_confirmed:
+            raise ValueError('Confirm that the selected building belongs to the selected household')
         if any(v is not None and v.tzinfo is not None for v in (self.range_start, self.range_end)):
             raise ValueError('Use timezone-naive timestamps matching the source data')
         if self.range_start and self.range_end and self.range_start > self.range_end:
@@ -130,3 +139,12 @@ class ProfileRequest(BaseModel):
 class ProfileResponse(BaseModel):
     dataset: str
     profile: dict[str, Any]
+
+
+class AddressSearchRequest(BaseModel):
+    postcode: str = Field(min_length=6, max_length=12)
+    house_number: int | None = Field(default=None, gt=0, le=99999)
+
+
+class BuildingLookupRequest(BaseModel):
+    bag_id: str = Field(pattern=r'^\d{16}$')

@@ -3,21 +3,14 @@
 from datetime import datetime
 
 from event_detection.schemas import DatasetInfo, SeriesPoint
-from .loaders import ZonnedaelIntervalLoader, ZonnedaelLoader
+from .loaders import ZonnedaelIntervalLoader, ZonnedaelLoader, GridFlexLoader
 
+_GRIDFLEX_LOADER = GridFlexLoader()
 _ZONNEDAEL_LOADER = ZonnedaelLoader()
 _ZONNEDAEL_HOURLY_LOADER = ZonnedaelIntervalLoader("zonnedael_hourly.csv.gz", 60)
 _ZONNEDAEL_15MIN_LOADER = ZonnedaelIntervalLoader("zonnedael_15min_electricity.csv.gz", 15)
 
 _DATASETS = [
-    DatasetInfo(
-        id="gridflex_heeten",
-        name="GridFlex Heeten",
-        households=[],
-        resolution_minutes=15,
-        available=False,
-        notes="Loader pending; source data is 1-minute and must be resampled to 15 minutes.",
-    ),
     DatasetInfo(
         id="zonnedael",
         name="Zonnedael daily (1d)",
@@ -48,10 +41,16 @@ _DATASETS = [
 def available_datasets() -> list[DatasetInfo]:
     """Return the datasets that can currently be selected."""
 
-    return _DATASETS.copy()
+    return [DatasetInfo(
+        id='gridflex_heeten', name='GridFlex Heeten daily grid import',
+        households=sorted(_GRIDFLEX_LOADER.included_households, key=lambda h: int(h[5:])),
+        resolution_minutes=1440, available=_GRIDFLEX_LOADER.available,
+        notes='Daily grid import and differenced hourly gas; export separate. No weather; raw minute completeness unknown.',
+    ), *_DATASETS]
 
 
 _LOADERS = {
+    'gridflex_heeten': _GRIDFLEX_LOADER,
     "zonnedael": _ZONNEDAEL_LOADER,
     "zonnedael_hourly": _ZONNEDAEL_HOURLY_LOADER,
     "zonnedael_15min_electricity": _ZONNEDAEL_15MIN_LOADER,

@@ -5,7 +5,7 @@ from event_detection.data.catalog import get_series
 
 
 def test_catalog_lists_only_ready_data_as_available():
-    # GridFlex is still planned, while all Zonnedael resolutions are ready.
+    # GridFlex availability follows the local database; Zonnedael is bundled.
     datasets = available_datasets()
     assert {dataset.id for dataset in datasets} == {
         "gridflex_heeten",
@@ -13,7 +13,9 @@ def test_catalog_lists_only_ready_data_as_available():
         "zonnedael_hourly",
         "zonnedael_15min_electricity",
     }
-    assert datasets[0].available is False
+    from event_detection.data.catalog import _GRIDFLEX_LOADER
+    assert datasets[0].available is _GRIDFLEX_LOADER.available
+    assert ('HouseTest' not in datasets[0].households)
 
     zonnedael = next(dataset for dataset in datasets if dataset.id == "zonnedael")
     assert zonnedael.available is True

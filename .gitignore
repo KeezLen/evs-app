@@ -4,3 +4,7 @@ __pycache__/
 *.py[cod]
 gridflex_data/*
 benchmark_results/
+
+# Local research data and private configuration
+local_data/
+.env

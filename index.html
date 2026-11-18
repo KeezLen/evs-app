@@ -4523,6 +4523,7 @@ function renderHouseholdBuilder(app, state, lang) {
   const label = (nl, en) => say(nl, en, lang);
   return '<h2>' + label('Huishoudanalyse', 'Household analysis') + '</h2>'
     + '<p class="note">' + label('Eén huishouden: profiel, verbruikspatronen en een passende tip uit de teamcatalogus. Dit zijn historische onderzoeksgegevens.', 'One household: profile, consumption patterns and a relevant tip from the team catalogue. These are historical research data.') + '</p>'
+    + renderBuildingLookup(lang)
     + card(label('Gegevens kiezen', 'Select data'), '<form id="hp-form"><div class="evt-controls">'
       + '<label class="evt-control">Dataset<select id="hp-dataset" required disabled></select></label>'
       + '<label class="evt-control">' + label('Huishouden', 'Household') + '<select id="hp-household" required disabled></select></label>'
@@ -4535,6 +4536,70 @@ function renderHouseholdBuilder(app, state, lang) {
       + '<label class="evt-control">' + label('Slaaptijden', 'Sleep schedule') + '<input id="hp-sleep" maxlength="200"></label>'
       + '</div></details><button class="btn" id="hp-build" disabled>' + label('Analyse starten', 'Run analysis') + '</button></form>')
     + '<p id="hp-status" class="evt-status" role="status" aria-live="polite"></p><div id="hp-result"></div>';
+}
+
+function renderBuildingLookup(lang) {
+  const label = (nl, en) => say(nl, en, lang);
+  return card(label('Woning opzoeken met postcode', 'Find building details by postcode'),
+    '<p>' + label('Optioneel. Een postcode kan meerdere adressen hebben. Kies eerst het juiste adres. Gegevens worden alleen na jouw bevestiging gebruikt.', 'Optional. A postcode may cover several addresses. Select the exact address first. Details are only applied after your confirmation.') + '</p>'
+    + '<form id="loc-form"><div class="evt-controls"><label class="evt-control">' + label('Postcode', 'Postcode') + '<input id="loc-postcode" autocomplete="postal-code" maxlength="8" placeholder="1234 AB" required></label>'
+    + '<label class="evt-control">' + label('Huisnummer (optioneel)', 'House number (optional)') + '<input id="loc-number" type="number" min="1" max="99999"></label></div>'
+    + '<button class="btn ghost" id="loc-search">' + label('Adressen zoeken', 'Find addresses') + '</button></form>'
+    + '<p id="loc-status" role="status" aria-live="polite"></p><div id="loc-choice"></div><div id="loc-result"></div>');
+}
+
+function mountBuildingLookup(container, lang, api, fmt, apply) {
+  const label = (nl, en) => say(nl, en, lang);
+  const find = id => container.querySelector('#loc-' + id);
+  let generation = 0;
+  const clear = () => {generation++; apply(null); find('result').innerHTML = '';};
+  find('form').addEventListener('input', () => {clear(); find('choice').innerHTML = ''; find('status').textContent = '';});
+  find('form').addEventListener('submit', async event => {
+    event.preventDefault(); clear();
+    find('choice').innerHTML = '';
+    const current = generation;
+    find('search').disabled = true;
+    find('status').textContent = label('Adressen zoeken…', 'Finding addresses…');
+    try {
+      const result = await api('/homes/search', {method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({postcode:find('postcode').value, house_number:find('number').value ? Number(find('number').value) : null})});
+      if (!container.isConnected || current !== generation) return;
+      find('status').textContent = result.addresses.length ? label('Kies het juiste adres.', 'Select the exact address.') : label('Geen adressen gevonden.', 'No addresses found.');
+      if (result.truncated) find('status').textContent += label(' Vul ook het huisnummer in om de lijst te beperken.', ' Add the house number to narrow the list.');
+      if (result.addresses.length) {
+        find('choice').innerHTML = '<label class="evt-control">' + label('Adres', 'Address') + '<select id="loc-address"><option value="">' + label('Selecteer adres', 'Select address') + '</option>'
+          + result.addresses.map(a => '<option value="' + escapeHtml(a.bag_id) + '">' + escapeHtml(a.address) + '</option>').join('') + '</select></label>';
+        find('address').addEventListener('change', async () => {
+          clear();
+          if (!find('address').value) return;
+          const lookupGeneration = generation;
+          find('status').textContent = label('Woninggegevens ophalen…', 'Loading building details…');
+          try {
+            const building = await api('/homes/lookup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({bag_id:find('address').value})});
+            if (!container.isConnected || lookupGeneration !== generation) return;
+            const ep = building.energy_performance;
+            find('result').innerHTML = '<h4>' + escapeHtml(building.address) + '</h4>'
+              + statRow(label('Oppervlakte', 'Floor area'), fmt(building.floor_area_m2) + ' m²')
+              + statRow(label('Bouwjaar', 'Construction year'), building.building_year == null ? '—' : String(building.building_year))
+              + statRow(label('Gebruiksdoel', 'Building use'), escapeHtml(building.building_use || '—'))
+              + statRow(label('Energielabel', 'Energy label'), escapeHtml(building.energy_label || '—'))
+              + (ep.status !== 'available' ? '<p class="note">' + label('Energielabel en prestatiegegevens zijn niet beschikbaar. EP-Online heeft een aparte toegangssleutel nodig; ontbrekende gegevens blijven onbekend.', 'Energy-label and performance data are unavailable. EP-Online requires a separate access key; missing details remain unknown.') + '</p>' :
+                statRow(label('Energiebehoefte (certificaat)', 'Energy demand (certificate)'), fmt(ep.energy_demand_kwh_m2_year) + ' kWh/m²/jaar')
+                + statRow(label('Warmtebehoefte (certificaat)', 'Heat demand (certificate)'), fmt(ep.heat_demand_kwh_m2_year) + ' kWh/m²/jaar')
+                + statRow(label('Berekend energieverbruik', 'Calculated energy use'), fmt(ep.calculated_energy_kwh_m2_year) + ' kWh/m²/jaar')
+                + statRow(label('Compactheid', 'Compactness'), fmt(ep.compactness))
+                + statRow(label('Temperatuuroverschrijding', 'Temperature exceedance'), fmt(ep.temperature_exceedance)))
+              + '<p class="note">' + label('Bron: BAG/PDOK, eventueel EP-Online. Dit zijn actuele gebouwgegevens, geen gemeten verbruik. Onderzoekshuishoudens zijn anoniem: koppel alleen als dit echt hetzelfde huis is.', 'Source: BAG/PDOK, optionally EP-Online. These are current building records, not measured consumption. Research homes are anonymous: only link this if it is actually the same home.') + '</p>'
+              + '<label><input type="checkbox" id="loc-confirm"> ' + label('Dit adres hoort bij het gekozen huishouden; gebruik de woninggegevens.', 'This address belongs to the selected household; use these building details.') + '</label>';
+            find('confirm').addEventListener('change', () => apply(find('confirm').checked ? building : null));
+            find('status').textContent = label('Woninggegevens gevonden.', 'Building details found.');
+          } catch (error) {if (container.isConnected && lookupGeneration === generation) find('status').textContent = error.message;}
+        });
+      }
+    } catch (error) {if (container.isConnected && current === generation) find('status').textContent = error.message;}
+    finally {if (container.isConnected) find('search').disabled = false;}
+  });
+  return () => {clear(); const checkbox=find('confirm'); if(checkbox) checkbox.checked=false;};
 }
 
 // The product flow owns its household context. It never reads the simulated persona.
@@ -4563,10 +4628,25 @@ async function mountHouseholdBuilder(container, lang) {
   };
   const showError = error => { status.textContent = label('Kan niet laden: ', 'Unable to load: ') + error.message; status.classList.add('warn'); };
   const fmt = v => v == null ? '—' : new Intl.NumberFormat(lang, {maximumFractionDigits: 2}).format(v);
-  const payload = () => ({dataset: find('dataset').value, household: find('household').value,
+  let selectedBuilding = null;
+  const payload = () => ({building_bag_id:selectedBuilding?.bag_id || null, building_confirmed:!!selectedBuilding, dataset: find('dataset').value, household: find('household').value,
     range_start: find('from').value || null, range_end: find('to').value || null,
     home: {energy_label: find('label').value || null, floor_area_m2: find('area').value ? Number(find('area').value) : null,
       work_schedule: find('work').value || null, sleep_schedule: find('sleep').value || null}});
+  let appliedArea = null, appliedLabel = null;
+  const resetBuilding = mountBuildingLookup(container, lang, api, fmt, building => {
+    selectedBuilding = building;
+    if (appliedArea !== null && find('area').value === String(appliedArea)) find('area').value = '';
+    if (appliedLabel !== null && find('label').value === appliedLabel) find('label').value = '';
+    appliedArea = appliedLabel = null;
+    if (building) {
+      if (!find('area').value && building.floor_area_m2 > 0) {find('area').value = building.floor_area_m2; appliedArea = building.floor_area_m2;}
+      if (!find('label').value && building.energy_label) {find('label').value = building.energy_label; appliedLabel=building.energy_label;}
+    }
+    find('form').dispatchEvent(new Event('input', {bubbles:true}));
+  });
+  find('household').addEventListener('change', resetBuilding);
+  find('dataset').addEventListener('change', resetBuilding);
   status.textContent = label('Datasets laden…', 'Loading datasets…');
   try {
     const datasets = (await api('/datasets')).filter(d => d.available && d.households.length);
@@ -4611,11 +4691,23 @@ async function mountHouseholdBuilder(container, lang) {
           + statRow(label('Gemiddeld per volledige dag', 'Mean per complete day'), fmt(f.mean_daily) + ' ' + unit)
           + statRow(label('Volledige dagen', 'Complete days'), f.valid_days + ' / ' + p.period.calendar_days)
           + statRow(label('Dekking', 'Coverage'), fmt(f.coverage * 100) + '%')
+          + '<h4>' + label('Patroonlabels', 'Pattern labels') + '</h4><ul>'
+          + f.patterns.labels.map(pattern => {
+            const names = {steady_pattern:['Gelijkmatig patroon','Steady pattern'], high_variance:['Sterke variatie','High variance'], variable_pattern:['Wisselend patroon','Variable pattern'], weekend_higher:['Hoger in het weekend','Weekend higher'], weekday_higher:['Hoger op werkdagen','Weekday higher'], weather_context_needed:['Weercontext nodig','Weather context needed'], insufficient_history:['Onvoldoende historie','Insufficient history'], unavailable:['Niet beschikbaar','Unavailable'], no_recorded_use:['Geen verbruik gemeten','No recorded use']};
+            const name = names[pattern.code] || [pattern.code,pattern.code];
+            return '<li>' + escapeHtml(label(name[0],name[1])) + '</li>';
+          }).join('') + '</ul><p class="note">'
+          + label('Beschrijvende demo-labels, geen oordeel over zuinigheid. Gas wordt alleen met voldoende weercontext geclassificeerd.', 'Descriptive demo labels, not an efficiency judgment. Gas is classified only with sufficient weather context.') + '</p>'
+          + '<details><summary>' + label('Hoe dit label werkt', 'How this label works') + '</summary><p>'
+          + label('Relatieve variatie = standaardafwijking gedeeld door gemiddelde. Gelijkmatig: maximaal 0,15; sterke variatie: minimaal 0,35. Drempels zijn voorlopig.', 'Relative variability = standard deviation divided by mean. Steady: at most 0.15; high variance: at least 0.35. Thresholds are provisional.')
+          + '</p>' + statRow(label('Relatieve variatie', 'Relative variability'), fmt(f.patterns.metrics.classification_cv))
+          + '<p>' + (f.patterns.basis === 'weather_adjusted_residuals' ? label('Gas: variatie na correctie voor buitentemperatuur.', 'Gas: variation after adjustment for outdoor temperature.') : label('Gebaseerd op volledige dagtotalen.', 'Based on complete daily totals.')) + '</p></details>'
           + '<details><summary>' + label('Weekpatroon', 'Weekday pattern') + '</summary>'
           + Object.entries(f.by_weekday).map(([day, value]) => statRow(weekday(Number(day)), fmt(value) + ' ' + unit + ' (n=' + f.weekday_samples[day] + ')')).join('') + '</details>');
       };
       let html = card(escapeHtml(p.household_id), statRow(label('Dataset', 'Dataset'), escapeHtml(result.dataset))
         + statRow(label('Periode', 'Period'), escapeHtml(p.period.start + ' – ' + p.period.end))
+        + (p.electricity_basis.includes('grid_import') ? '<p class="note">' + label('Stroom is hier afname van het net, niet het totale verbruik van apparaten. Teruglevering is apart gehouden. Volledigheid geldt voor beschikbare kwartieren; de oorspronkelijke minuutdekking is onbekend.', 'Electricity here is grid import, not total device consumption. Export is kept separate. Completeness refers to available aggregate intervals; raw minute coverage is unknown.') + '</p>' : '')
         + '<p>' + label('Drempel voor de demo: 30 volledige dagen en 80% dekking per energietype. Dit is geen bewijs van voorspelkwaliteit.', 'Demo threshold: 30 complete days and 80% coverage per fuel. This does not establish prediction accuracy.') + '</p>')
         + fuelCard('electricity_kwh', label('Stroomprofiel', 'Electricity profile'), 'kWh')
         + fuelCard('gas_m3', label('Gasprofiel', 'Gas profile'), 'm³')
@@ -4627,6 +4719,7 @@ async function mountHouseholdBuilder(container, lang) {
           ['floor_area_m2', label('Oppervlakte (m²)', 'Floor area (m²)')], ['work_schedule', label('Werktijden', 'Work schedule')],
           ['sleep_schedule', label('Slaaptijden', 'Sleep schedule')]
         ].map(([key, title]) => statRow(title, escapeHtml(p.home[key] == null ? '—' : String(p.home[key])))).join(''))
+        + (p.home.building_context ? card(label('Gekoppelde woninggegevens', 'Linked building details'), statRow(label('Adres', 'Address'), escapeHtml(p.home.building_context.address)) + statRow(label('Bouwjaar', 'Construction year'), fmt(p.home.building_context.building_year))) : '')
         + card(label('Verbruikspatronen', 'Consumption patterns'), result.events.length ? '<ul>' + result.events.map(event => '<li>' + escapeHtml(event.start.slice(0, 10) + ': ' + evtLabel(event.type)) + '</li>').join('') + '</ul>' : '<p>' + label('Geen patronen gevonden met voldoende gegevens.', 'No patterns found with sufficient data.') + '</p>');
       const advice = productRecommendation(result);
       html += card(label('Passende tip', 'Relevant tip'), advice ? '<h4>' + escapeHtml(advice.tip[lang].title) + '</h4><p>'
