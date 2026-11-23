@@ -218,6 +218,53 @@ def test_rolling_single_household_queues_and_saves_all_weeks(monkeypatch, tmp_pa
     assert client.post("/benchmark", json={"dataset": "zonnedael", "training_weeks": 3}).status_code == 422
 
 
+def test_cross_household_job_records_disjoint_groups_and_settings(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+    monkeypatch.setattr(api_module, "audit_weather_linkage", lambda household: {"weather_gas_enabled": False})
+    monkeypatch.setattr(api_module, "dataset_fingerprints", lambda dataset: {"data_sha256": "abc"})
+    submitted = []
+    monkeypatch.setattr(api_module._BENCHMARK_EXECUTOR, "submit", lambda *args: submitted.append(args))
+
+    def run(dataset, groups, evaluation_group, patterns, seed, weather_gas_enabled,
+            strengths, training_weeks, seed_repeats, on_progress):
+        assert evaluation_group == "development"
+        assert len(groups["training"]) == 40
+        assert len(groups["development"]) == len(groups["test"]) == 9
+        on_progress(1, 1)
+        return [{"household": groups["development"][0], "seed": seed, "methods": [], "seasonal": []}], []
+
+    monkeypatch.setattr(api_module, "run_cross_household_benchmark", run)
+    client = TestClient(app)
+    response = client.post("/benchmark", json={
+        "dataset": "zonnedael", "comparison": "cross_household", "household_seed": 12,
+    })
+    assert response.status_code == 200
+    assert response.json()["total_households"] == 9
+    function, *args = submitted[0]
+    function(*args)
+    job = client.get(f"/benchmark/jobs/{response.json()['job_id']}").json()
+    assert job["status"] == "completed"
+    assert job["comparison"] == "cross_household"
+    assert job["household_seed"] == 12
+    assert job["dataset_fingerprints"]["data_sha256"] == "abc"
+    assert set(job["household_groups"]["training"]).isdisjoint(job["household_groups"]["development"])
+    listed = client.get("/benchmark/saved").json()[0]
+    assert (listed["comparison"], listed["evaluation_group"], listed["household_seed"]) == (
+        "cross_household", "development", 12
+    )
+    saved = client.get(f"/benchmark/saved/{job['saved_result_id']}").json()["result"]
+    assert saved["household_groups"] == job["household_groups"]
+    invalid = client.post("/benchmark", json={
+        "dataset": "zonnedael", "comparison": "cross_household", "protocol": "legacy_v1",
+    })
+    assert invalid.status_code == 400
+    daily_rolling = client.post("/benchmark", json={
+        "dataset": "zonnedael", "comparison": "cross_household", "training_weeks": 8,
+    })
+    assert daily_rolling.status_code == 400
+    assert "calibration" in daily_rolling.json()["detail"]
+
+
 def test_all_household_benchmark_queues_progress_job(monkeypatch):
     monkeypatch.setattr(
         api_module,

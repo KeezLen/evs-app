@@ -4,7 +4,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from bisect import bisect_left
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 import math
 import random
 from statistics import median
@@ -48,6 +48,84 @@ def chronological_split(points: Sequence[SeriesPoint]) -> BenchmarkPartitions:
         calibration=ordered[training_end:calibration_end],
         test=ordered[calibration_end:],
     )
+
+
+def seasonal_scores(
+    household: str,
+    test: Sequence[SeriesPoint],
+    truth: Sequence[Event],
+    methods: Sequence[dict],
+    protocol: str,
+) -> list[dict]:
+    """Score wholly contained events separately in each meteorological season."""
+    resolution = test[0].interval_minutes
+    start = test[0].timestamp
+    end = test[-1].timestamp + timedelta(minutes=resolution)
+    segments = []
+    while start < end:
+        month = start.month
+        if month in (12, 1, 2):
+            year = start.year if month == 12 else start.year - 1
+            season = f"Winter {year}/{year + 1}"
+            boundary = datetime(year + 1, 3, 1)
+        elif month <= 5:
+            season, boundary = f"Spring {start.year}", datetime(start.year, 6, 1)
+        elif month <= 8:
+            season, boundary = f"Summer {start.year}", datetime(start.year, 9, 1)
+        else:
+            season, boundary = f"Autumn {start.year}", datetime(start.year, 12, 1)
+        segment_end = min(end, boundary)
+
+        def contained(events: Sequence[Event]) -> list[Event]:
+            return [event for event in events if event.start >= start and event.end <= segment_end]
+
+        def crossing(events: Sequence[Event]) -> int:
+            return sum(event.start < segment_end and event.end > start
+                       and not (event.start >= start and event.end <= segment_end) for event in events)
+
+        segment_truth = contained(truth)
+        hours = (segment_end - start).total_seconds() / 3600
+        segment_methods = []
+        excluded = crossing(truth)
+        for method in methods:
+            if not method.get("applicable"):
+                continue
+            detected = method["detected_events"]
+            normal = method["normal_events"]
+            excluded += crossing(detected) + crossing(normal)
+            method_truth = [event for event in segment_truth if event.details.get("signal") in method.get(
+                "supported_signals", ("electricity", "gas")
+            )]
+            scores = summarize_benchmark_events(contained(detected), method_truth, hours, max(resolution, 15), protocol)
+            normal_scores = summarize_benchmark_events(contained(normal), [], hours, max(resolution, 15), protocol)
+            for metric in normal_scores["classes"]:
+                metric["alerts_per_household_week"] = round(metric["detected"] / (hours / 168), 4)
+                if not any(row["signal"] == metric["signal"] and row["direction"] == metric["direction"]
+                           for row in scores["classes"]):
+                    scores["classes"].append({
+                        "signal": metric["signal"], "direction": metric["direction"],
+                        "precision": None, "recall": None, "f1": None,
+                        "detected": 0, "ground_truth": 0, "matched": 0,
+                        "false_positives": 0, "false_negatives": 0,
+                    })
+            segment_methods.append({
+                "method": method["method"], "applicable": True,
+                "scores": scores, "normal_scores": normal_scores,
+            })
+        segments.append({
+            "household": household, "season": season, "start": start, "end": segment_end,
+            "excluded_boundary_events": excluded, "methods": segment_methods,
+            "valid_electricity_points": sum(
+                start <= point.timestamp < segment_end and point.quality_flag == "ok" and point.electricity_kwh is not None
+                for point in test
+            ),
+            "valid_gas_points": sum(
+                start <= point.timestamp < segment_end and point.quality_flag == "ok" and point.gas_m3 is not None
+                for point in test
+            ),
+        })
+        start = segment_end
+    return segments
 
 
 def rolling_weekly_splits(points: Sequence[SeriesPoint], training_weeks: int) -> list[BenchmarkPartitions]:
@@ -602,6 +680,7 @@ def _run_partition_benchmark(
             "injected_event_count": len(injected_events),
             "scores": injected_scores,
             "detected_events": injected_events,
+            "normal_events": normal_events,
         })
         detector_budgets.append((method, normal_events, normal_scores))
 
@@ -617,6 +696,7 @@ def _run_partition_benchmark(
         "injected_event_count": 0,
         "scores": no_alert_scores,
         "detected_events": [],
+        "normal_events": [],
     })
     for index, (method, budget_events, normal_scores) in enumerate(detector_budgets):
         random_events = random_budget_events(partitions.test, budget_events, seed + index)
@@ -636,11 +716,12 @@ def _run_partition_benchmark(
             "injected_event_count": len(random_events),
             "scores": random_scores,
             "detected_events": random_events,
+            "normal_events": budget_events,
         })
 
     if resolution == 1440:
         method_results.append({"method": "rnn", "applicable": False, "reason": "RNN benchmark supports hourly and 15-minute data."})
-    return {
+    result = {
         "dataset": dataset,
         "household": household,
         "resolution_minutes": resolution,
@@ -668,6 +749,8 @@ def _run_partition_benchmark(
         "ground_truth": truth,
         "methods": method_results,
     }
+    result["seasonal"] = seasonal_scores(household, partitions.test, truth, method_results, protocol)
+    return result
 
 
 def run_household_rolling_benchmark(

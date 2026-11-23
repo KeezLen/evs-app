@@ -75,6 +75,11 @@ class BenchmarkRequest(BaseModel):
     seed: int = Field(default=17, ge=0)
     lookback_days: Literal[1, 7] = 1
     training_weeks: Literal[2, 4, 8] | None = None
+    seasonal_breakdown: bool = True
+    comparison: Literal["personal", "cross_household"] = "personal"
+    evaluation_group: Literal["development", "test"] = "development"
+    household_seed: int = Field(default=17, ge=0)
+    seed_repeats: Literal[1, 3, 5] = 1
 
 
 class SaveBenchmarkRequest(BaseModel):

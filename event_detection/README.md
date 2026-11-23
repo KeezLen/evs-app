@@ -56,10 +56,42 @@ Inspect each household/test week in the result selector. Rolling aggregate
 metrics average scored weeks per household, then average households; event
 counts are summed. Detector support and skipped injections are reported per
 window. For example, two weeks of daily training do not meet Isolation Forest's
-minimum of 30 valid points. Injections use the selected training window's
+minimum of 30 valid points, and any one-week daily calibration window has fewer
+than its required 10 observations. Therefore cross-household rolling comparisons
+need hourly or quarter-hour data. Injections use the selected training window's
 baseline, so runs with different windows do not necessarily contain identical
 synthetic events. Changes are injected only into an in-memory test copy; they
 are synthetic sensitivity tests, not appliance labels or naturally observed faults.
+
+The optional seasonal breakdown scores the portion of each test window in each
+meteorological season (winter starts in December). Events crossing a season
+boundary are excluded from both seasons; their occurrences and valid point
+counts are shown. Skipped injections are recorded for the original test
+window, since they cannot necessarily be assigned to a season. Early and late
+winter are different seasons, and the 2013-only data cannot establish
+year-to-year seasonal reliability.
+
+The **personal vs shared Isolation Forest** comparison assigns included
+households reproducibly to training, development and final-test groups using
+the household split seed. At 58 homes these contain 40, 9 and 9 respectively.
+Choose development while deciding settings; reserve the final-test group and
+the seed for final evaluation. The pooled model is trained and calibrated only
+on the training households before the test period, while the personal baseline
+uses the target home's earlier readings. Their injected test readings and labels
+are identical and use only a pooled training reference; models are scored
+separately per target home. Only signals supported by both models are scored,
+with skipped cases and detector support shown. The comparison is restricted to
+corrected v2, and the RNN lookback does not apply. Both fixed and rolling
+windows are supported; rolling cross-household experiments may be expensive.
+Choose 1, 3 or 5 consecutive injection seeds to compare seed-specific overall
+and seasonal scores. The household grouping and fitted models are reused across
+seeds; these repeated cases are not independent households. Aggregate event
+and support counts include repeated seed cases. The quarter-hour dataset can
+require substantial memory because selected household series are loaded together.
+Saved results record household assignments, seed, dates, experiment version and
+SHA-256 fingerprints of the dataset and household inclusion file. Inclusion
+itself was determined using full-year data, and the shared model is not a
+warm-start model.
 
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose
@@ -87,7 +119,12 @@ visible as breaks in the chart.
 - `POST /benchmark` runs one household synchronously or queues all included
   households and returns a job ID. Setting `training_weeks` to `2`, `4`, or
   `8` queues a rolling weekly run even for one household; omit it or use
-  `null` for the default split. Poll `GET /benchmark/jobs/{job_id}` for
+  `null` for the default split. Set `seasonal_breakdown` to control seasonal
+  summaries. Set `comparison` to `cross_household`, `evaluation_group` to
+  `development` or `test`, `household_seed` to a nonnegative integer, and
+  `seed_repeats` to `1`, `3`, or `5` for
+  the grouped comparison; this always queues a background job. Poll
+  `GET /benchmark/jobs/{job_id}` for
   progress and results. Completed single-household and background runs are
   automatically saved as JSON in the repository's `benchmark_results/`
   directory. These files are local and git-ignored.

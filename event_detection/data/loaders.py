@@ -1,7 +1,7 @@
 """Dataset loaders that normalize source files into API-facing daily points."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from csv import DictReader
 from datetime import datetime
 import gzip
@@ -9,6 +9,34 @@ from pathlib import Path
 
 from event_detection.config import settings
 from event_detection.schemas import SeriesPoint
+
+
+def _read_many(
+    path: Path,
+    households: set[str],
+    included: set[str],
+    required: set[str],
+    convert: Callable[[dict[str, str]], SeriesPoint],
+) -> dict[str, list[SeriesPoint]]:
+    invalid = households - included
+    if invalid:
+        raise ValueError(f"Households are not included in Zonnedael data: {sorted(invalid)}")
+    points: dict[str, list[SeriesPoint]] = {household: [] for household in households}
+    opener = gzip.open if path.suffix == ".gz" else open
+    try:
+        with opener(path, mode="rt", newline="", encoding="utf-8") as file:
+            rows = DictReader(file)
+            missing = required - set(rows.fieldnames or ())
+            if missing:
+                raise ValueError(f"Zonnedael data is missing columns: {sorted(missing)}")
+            for row in rows:
+                if row["household_id"] in points:
+                    points[row["household_id"]].append(convert(row))
+    except FileNotFoundError as error:
+        raise FileNotFoundError(f"Zonnedael data file not found: {path}") from error
+    for series in points.values():
+        series.sort(key=lambda point: point.timestamp)
+    return points
 
 
 class DatasetLoader(ABC):
@@ -105,6 +133,10 @@ class ZonnedaelLoader(DatasetLoader):
             raise FileNotFoundError(f"Zonnedael daily file not found: {data_path}") from error
         return sorted(points, key=lambda point: point.timestamp)
 
+    def load_many(self, households: set[str]) -> dict[str, list[SeriesPoint]]:
+        return _read_many(self.data_root / "zonnedael_daily_weather.csv", households,
+                          self._included_households, self._required_columns, self._row_to_point)
+
     def _row_to_point(self, row: dict[str, str]) -> SeriesPoint:
         """Convert one CSV row into the API's daily point format."""
         quality = row["quality_flag"].strip()
@@ -180,6 +212,10 @@ class ZonnedaelIntervalLoader(DatasetLoader):
         except FileNotFoundError as error:
             raise FileNotFoundError(f"Zonnedael interval file not found: {data_path}") from error
         return sorted(points, key=lambda point: point.timestamp)
+
+    def load_many(self, households: set[str]) -> dict[str, list[SeriesPoint]]:
+        return _read_many(self.data_root / self._filename, households,
+                          self._included_households, self._required_columns, self._row_to_point)
 
     def _row_to_point(self, row: dict[str, str]) -> SeriesPoint:
         quality = row["quality_flag"].strip()

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import event_detection.evaluation.benchmark as benchmark_module
+import event_detection.evaluation.cross_household as cross_module
 from event_detection.evaluation.benchmark import (
     chronological_split,
     detector_support_diagnostics,
@@ -10,6 +11,7 @@ from event_detection.evaluation.benchmark import (
     injection_specs,
     random_budget_events,
     rolling_weekly_splits,
+    seasonal_scores,
 )
 from event_detection.evaluation.matching import match_event_windows, summarize_benchmark_events
 from event_detection.schemas import Event, SeriesPoint
@@ -95,6 +97,91 @@ def test_rolling_benchmark_runs_detectors_and_reports_progress(monkeypatch):
     assert result["date_ranges"]["test_start"] == datetime(2013, 1, 22)
     assert result["ground_truth"]
     assert {"isolation_forest", "rnn"} <= {method["method"] for method in result["methods"]}
+
+
+def test_seasonal_scores_exclude_crossing_events_and_keep_winter_years_distinct():
+    points = [
+        SeriesPoint(timestamp=datetime(2013, 2, 28, 23) + timedelta(hours=index),
+                    interval_minutes=60, electricity_kwh=1, quality_flag="ok")
+        for index in range(3)
+    ]
+    crossing = _event("crossing", datetime(2013, 2, 28, 23, 30), datetime(2013, 3, 1, 0, 30))
+    spring = _event("spring", datetime(2013, 3, 1), datetime(2013, 3, 1, 1))
+    method = {"method": "test", "applicable": True, "detected_events": [spring], "normal_events": []}
+    segments = seasonal_scores("A", points, [crossing, spring], [method], "corrected_v2")
+
+    assert [segment["season"] for segment in segments] == ["Winter 2012/2013", "Spring 2013"]
+    assert [segment["excluded_boundary_events"] for segment in segments] == [1, 1]
+    assert segments[1]["methods"][0]["scores"]["matching"]["matched"] == 1
+    assert segments[1]["methods"][0]["scores"]["matching"]["ground_truth"] == 1
+
+
+def test_household_groups_are_reproducible_disjoint_and_hold_out_nine():
+    households = [f"H{index}" for index in range(58)]
+    groups = cross_module.household_groups(households, 17)
+    assert groups == cross_module.household_groups(list(reversed(households)), 17)
+    assert [len(groups[key]) for key in ("training", "development", "test")] == [40, 9, 9]
+    assert set(groups["training"]).isdisjoint(groups["development"] + groups["test"])
+    assert set(groups["development"]).isdisjoint(groups["test"])
+
+
+def test_cross_household_fits_only_earlier_source_data_and_pairs_injections(monkeypatch):
+    base = _series(24 * 42, interval_minutes=60)
+    values = {"A": 1.0, "B": 2.0, "C": 3.0}
+    all_series = {
+        household: [point.model_copy(update={"electricity_kwh": value + point.electricity_kwh,
+                                             "gas_m3": None}) for point in base]
+        for household, value in values.items()
+    }
+    monkeypatch.setattr(cross_module, "get_series_many", lambda dataset, households: {
+        household: all_series[household] for household in households
+    })
+    actual_fit = cross_module._fit_models
+    fit_inputs = []
+    def observe_fit(training, calibration):
+        fit_inputs.append((training, calibration))
+        return actual_fit(training, calibration)
+    monkeypatch.setattr(cross_module, "_fit_models", observe_fit)
+    actual_score = cross_module._score_models
+    scored_inputs = []
+    def observe_score(models, points):
+        scored_inputs.append(points)
+        return actual_score(models, points)
+    monkeypatch.setattr(cross_module, "_score_models", observe_score)
+
+    results, errors = cross_module.run_cross_household_benchmark(
+        "test", {"training": ["A"], "development": ["B"], "test": ["C"]},
+        "development", ["spikes"], 17, False, [0.5], None, seed_repeats=3,
+    )
+    assert not errors
+    assert [result["seed"] for result in results] == [17, 18, 19]
+    assert len(fit_inputs) == 2
+    result = results[0]
+    test_start = result["date_ranges"]["test_start"]
+    shared_training, shared_calibration = fit_inputs[0]
+    assert {int(point.electricity_kwh) for point in shared_training + shared_calibration} == {1}
+    assert max(point.timestamp for point in shared_training) < min(point.timestamp for point in shared_calibration)
+    assert max(point.timestamp for point in shared_calibration) < test_start
+    assert scored_inputs[0] is scored_inputs[1]
+    assert scored_inputs[2] is scored_inputs[3]
+    assert [method["scores"]["matching"]["ground_truth"] for method in result["methods"][:2]] == [
+        len(result["ground_truth"]), len(result["ground_truth"])
+    ]
+    assert result["skipped_injections"]
+
+
+def test_shared_confidence_does_not_depend_on_future_test_values():
+    points = _series(400, interval_minutes=60)
+    models, _ = cross_module._fit_models(points[:200], points[200:300])
+    models["electricity"].threshold = float("inf")
+    first = points[300].model_copy(update={"electricity_kwh": 100.0})
+    later = points[302].model_copy(update={"electricity_kwh": 1.0})
+    changed_later = later.model_copy(update={"electricity_kwh": 1000.0})
+    original = cross_module._score_models(models, [first, later])
+    changed = cross_module._score_models(models, [first, changed_later])
+    first_original = next(event for event in original if event.start == first.timestamp and event.type == "unusual_electricity")
+    first_changed = next(event for event in changed if event.start == first.timestamp and event.type == "unusual_electricity")
+    assert first_original.confidence == first_changed.confidence
 
 
 def test_benchmark_injections_are_deterministic_and_do_not_mutate_source():

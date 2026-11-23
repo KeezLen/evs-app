@@ -14,10 +14,11 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 
 from event_detection.config import settings
-from event_detection.data import available_datasets, get_series
+from event_detection.data import available_datasets, dataset_fingerprints, get_series
 from event_detection.anomaly import IsolationForestAnomalyDetector, RNNForecastDetector
 from event_detection.evaluation.matching import match_events
 from event_detection.evaluation.benchmark import run_household_benchmark, run_household_rolling_benchmark
+from event_detection.evaluation.cross_household import household_groups, run_cross_household_benchmark
 from event_detection.evaluation.scenarios import load_scenario
 from event_detection.evaluation.weather_audit import audit_weather_linkage
 from event_detection.nilm import detector_registry
@@ -55,7 +56,8 @@ def _saved_benchmark_metadata(record: dict) -> dict:
     )}
     result = record.get("result", {})
     first_result = next(iter(result.get("results", [])), {})
-    for key in ("seed", "lookback_days", "training_weeks", "patterns", "strengths"):
+    for key in ("seed", "lookback_days", "training_weeks", "patterns", "strengths",
+                "comparison", "evaluation_group", "household_seed", "seed_repeats"):
         if metadata.get(key) is None:
             metadata[key] = result.get(key)
         if metadata[key] is None:
@@ -384,6 +386,33 @@ def _benchmark_aggregate(results: list[dict]) -> list[dict]:
     return aggregate
 
 
+def _seasonal_aggregate(results: list[dict]) -> list[dict]:
+    seasons: dict[str, list[dict]] = {}
+    for result in results:
+        for segment in result.get("seasonal", []):
+            seasons.setdefault(segment["season"], []).append(segment)
+    return [{
+        "season": season,
+        "start": min(segment["start"] for segment in segments),
+        "end": max(segment["end"] for segment in segments),
+        "windows": len(segments),
+        "households": len({segment["household"] for segment in segments}),
+        "valid_electricity_points": sum(segment["valid_electricity_points"] for segment in segments),
+        "valid_gas_points": sum(segment["valid_gas_points"] for segment in segments),
+        "excluded_boundary_events": sum(segment["excluded_boundary_events"] for segment in segments),
+        "aggregate": _benchmark_aggregate(segments),
+    } for season, segments in sorted(seasons.items(), key=lambda item: min(segment["start"] for segment in item[1]))]
+
+
+def _seed_aggregates(results: list[dict], include_seasonal: bool) -> list[dict]:
+    seeds = sorted({result["seed"] for result in results})
+    return [{
+        "seed": seed,
+        "aggregate": _benchmark_aggregate([result for result in results if result["seed"] == seed]),
+        "seasonal_aggregate": _seasonal_aggregate([result for result in results if result["seed"] == seed]) if include_seasonal else [],
+    } for seed in seeds]
+
+
 def _run_benchmark_job(
     job_id: str,
     request: BenchmarkRequest,
@@ -439,6 +468,7 @@ def _run_benchmark_job(
         "results": results,
         "errors": errors,
         "aggregate": _benchmark_aggregate(results),
+        "seasonal_aggregate": _seasonal_aggregate(results) if request.seasonal_breakdown else [],
         "weather_audit": weather_audit,
         "protocol": request.protocol,
         "dataset": request.dataset,
@@ -447,11 +477,59 @@ def _run_benchmark_job(
         "seed": request.seed,
         "lookback_days": request.lookback_days,
         "training_weeks": request.training_weeks,
+        "seasonal_breakdown": request.seasonal_breakdown,
+        "comparison": "personal",
     }
     try:
         saved_metadata = _persist_benchmark_result(completed_job, "background")
         completed_job.update(saved_metadata)
         completed_job["saved_result_id"] = saved_metadata["id"]
+    except OSError as error:
+        completed_job["save_error"] = str(error)
+    with _BENCHMARK_JOBS_LOCK:
+        _BENCHMARK_JOBS[job_id].update(completed_job)
+
+
+def _run_cross_benchmark_job(job_id: str, request: BenchmarkRequest, groups: dict[str, list[str]],
+                             weather_audit: dict) -> None:
+    with _BENCHMARK_JOBS_LOCK:
+        _BENCHMARK_JOBS[job_id]["status"] = "running"
+
+    def report_progress(completed: int, total: int) -> None:
+        with _BENCHMARK_JOBS_LOCK:
+            _BENCHMARK_JOBS[job_id].update({"completed_windows": completed, "total_windows": total})
+
+    try:
+        fingerprints = dataset_fingerprints(request.dataset)
+        results, errors = run_cross_household_benchmark(
+            request.dataset, groups, request.evaluation_group, request.patterns, request.seed,
+            bool(weather_audit["weather_gas_enabled"]), request.strengths,
+            request.training_weeks, seed_repeats=request.seed_repeats, on_progress=report_progress,
+        )
+    except Exception as error:
+        fingerprints = None
+        results, errors = [], [{"household": "experiment", "error": str(error)}]
+    total_households = len(groups[request.evaluation_group])
+    completed_job = {
+        "job_id": job_id, "status": "completed" if results else "failed",
+        "dataset": request.dataset, "protocol": request.protocol,
+        "experiment_version": "cross_household_v1", "dataset_fingerprints": fingerprints,
+        "comparison": request.comparison, "evaluation_group": request.evaluation_group,
+        "household_seed": request.household_seed, "household_groups": groups,
+        "total_households": total_households, "completed_households": total_households,
+        "all_households": True, "results": results, "errors": errors,
+        "aggregate": _benchmark_aggregate(results),
+        "seasonal_aggregate": _seasonal_aggregate(results) if request.seasonal_breakdown else [],
+        "seed_aggregates": _seed_aggregates(results, request.seasonal_breakdown),
+        "seasonal_breakdown": request.seasonal_breakdown,
+        "weather_audit": weather_audit, "patterns": request.patterns, "strengths": request.strengths,
+        "seed": request.seed, "seed_repeats": request.seed_repeats,
+        "lookback_days": request.lookback_days, "training_weeks": request.training_weeks,
+    }
+    try:
+        saved = _persist_benchmark_result(completed_job, "background")
+        completed_job.update(saved)
+        completed_job["saved_result_id"] = saved["id"]
     except OSError as error:
         completed_job["save_error"] = str(error)
     with _BENCHMARK_JOBS_LOCK:
@@ -478,6 +556,31 @@ def start_benchmark(request: BenchmarkRequest):
     dataset_info = next((item for item in available_datasets() if item.id == request.dataset), None)
     if dataset_info is None or not dataset_info.available:
         raise HTTPException(status_code=400, detail="Unknown or unavailable benchmark dataset")
+    if request.comparison == "cross_household":
+        if request.protocol != "corrected_v2":
+            raise HTTPException(status_code=400, detail="Cross-household comparison requires corrected_v2")
+        if request.training_weeks is not None and dataset_info.resolution_minutes == 1440:
+            raise HTTPException(
+                status_code=400,
+                detail="Daily rolling comparisons have fewer than 10 calibration observations; use hourly or quarter-hour data",
+            )
+        try:
+            groups = household_groups(dataset_info.households, request.household_seed)
+            weather_audit = audit_weather_linkage("Klant 34" if "Klant 34" in dataset_info.households else dataset_info.households[0])
+        except (FileNotFoundError, ValueError, IndexError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        job_id = uuid4().hex
+        total_households = len(groups[request.evaluation_group])
+        with _BENCHMARK_JOBS_LOCK:
+            _BENCHMARK_JOBS[job_id] = {
+                "job_id": job_id, "protocol": request.protocol, "comparison": request.comparison,
+                "status": "queued", "total_households": total_households, "completed_households": 0,
+                "completed_windows": 0, "total_windows": None, "results": [], "errors": [],
+                "household_groups": groups, "evaluation_group": request.evaluation_group,
+                "weather_audit": weather_audit,
+            }
+        _BENCHMARK_EXECUTOR.submit(_run_cross_benchmark_job, job_id, request, groups, weather_audit)
+        return {"job_id": job_id, "status": "queued", "total_households": total_households, "protocol": request.protocol}
     if request.all_households:
         households = dataset_info.households
     elif request.household:
@@ -526,6 +629,9 @@ def start_benchmark(request: BenchmarkRequest):
         "weather_audit": weather_audit,
         "results": [result],
         "aggregate": _benchmark_aggregate([result]),
+        "seasonal_aggregate": _seasonal_aggregate([result]) if request.seasonal_breakdown else [],
+        "seasonal_breakdown": request.seasonal_breakdown,
+        "comparison": "personal",
     }
     try:
         response_data.update(_persist_benchmark_result(response_data, "automatic"))

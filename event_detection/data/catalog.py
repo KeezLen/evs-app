@@ -1,6 +1,7 @@
 """Dataset catalog and access to normalized daily observations."""
 
 from datetime import datetime
+import hashlib
 
 from event_detection.schemas import DatasetInfo, SeriesPoint
 from .loaders import ZonnedaelIntervalLoader, ZonnedaelLoader
@@ -77,3 +78,30 @@ def get_series(
         if (range_start is None or point.timestamp >= range_start)
         and (range_end is None or point.timestamp <= range_end)
     ]
+
+
+def get_series_many(dataset: str, households: set[str]) -> dict[str, list[SeriesPoint]]:
+    try:
+        loader = _LOADERS[dataset]
+    except KeyError as error:
+        raise ValueError(f"Unknown dataset: {dataset}") from error
+    return loader.load_many(households)
+
+
+def dataset_fingerprints(dataset: str) -> dict[str, str]:
+    try:
+        loader = _LOADERS[dataset]
+    except KeyError as error:
+        raise ValueError(f"Unknown dataset: {dataset}") from error
+    data_file = (
+        loader.data_root / "zonnedael_daily_weather.csv"
+        if isinstance(loader, ZonnedaelLoader) else loader.data_root / loader._filename
+    )
+    fingerprints = {}
+    for label, path in (("data_sha256", data_file), ("household_summary_sha256", loader.data_root / "household_summary.csv")):
+        digest = hashlib.sha256()
+        with path.open("rb") as file:
+            for block in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(block)
+        fingerprints[label] = digest.hexdigest()
+    return fingerprints

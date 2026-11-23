@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from event_detection.data import available_datasets
-from event_detection.data.catalog import get_series
+from event_detection.data.catalog import get_series, get_series_many
 
 
 def test_catalog_lists_only_ready_data_as_available():
@@ -46,6 +46,13 @@ def test_zonnedael_returns_daily_points_and_filters_dates():
     assert points[0].gas_m3 == 5.376
     assert points[0].quality_flag == "ok"
     assert points[0].hdd18 == 10.9
+
+
+def test_bulk_loader_matches_single_household_loaders():
+    for dataset in ("zonnedael", "zonnedael_hourly"):
+        loaded = get_series_many(dataset, {"Klant 34", "Klant 10"})
+        assert loaded["Klant 34"] == get_series(dataset, "Klant 34")
+        assert loaded["Klant 10"] == get_series(dataset, "Klant 10")
 
 
 def test_zonnedael_rejects_excluded_households():

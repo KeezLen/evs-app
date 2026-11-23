@@ -76,6 +76,10 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
     <label id="household-label">Household<select id="household"></select></label>
     <label>Lookback<select id="lookback"><option value="1">24 hours</option><option value="7">7 days</option></select></label>
     <label>Training split<select id="training-weeks"><option value="">Chronological 70 / 10 / 20</option><option value="2">Rolling: 2 training weeks</option><option value="4">Rolling: 4 training weeks</option><option value="8">Rolling: 8 training weeks</option></select></label>
+    <label>Comparison<select id="comparison"><option value="personal">Personal detectors</option><option value="cross_household">Personal vs shared Isolation Forest</option></select></label>
+    <label id="evaluation-group-label" hidden>Held-out households<select id="evaluation-group"><option value="development">Development</option><option value="test">Final test</option></select></label>
+    <label id="household-seed-label" hidden>Household split seed<input id="household-seed" type="number" min="0" value="17"></label>
+    <label id="seed-repeats-label" hidden>Injection seeds<select id="seed-repeats"><option value="1">1 seed</option><option value="3">3 consecutive seeds</option><option value="5">5 consecutive seeds</option></select></label>
     <label>Random seed<input id="seed" type="number" min="0" value="17"></label>
     <label>Protocol<select id="protocol"><option value="corrected_v2">Corrected v2</option><option value="legacy_v1">Legacy v1</option></select></label>
     <div class="actions"><button id="run">Run benchmark</button></div>
@@ -84,7 +88,8 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
       <label class="pattern"><input type="checkbox" value="sustained_high" checked><span>Sustained high use</span></label>
       <label class="pattern"><input type="checkbox" value="low_use" checked><span>Unusually low use</span></label>
       <label class="pattern" id="weather-pattern"><input type="checkbox" value="weather_gas" checked><span>Cold-weather gas changes</span></label>
-      <label class="pattern"><input id="all-households" type="checkbox"><span>All included households (background run)</span></label>
+      <label class="pattern" id="all-households-option"><input id="all-households" type="checkbox"><span>All included households (background run)</span></label>
+      <label class="pattern"><input id="seasonal-breakdown" type="checkbox" checked><span>Seasonal breakdown</span></label>
     </div>
     <div class="patterns" aria-label="Injection strengths">
       <strong class="pattern-heading">Strengths:</strong>
@@ -98,6 +103,7 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
     </div>
   </section>
   <p class="note">Rolling splits advance one week at a time: selected training weeks, then one calibration week and one test week. They can take substantially longer; short or missing data may leave detectors or injections unsupported.</p>
+  <p id="cross-note" class="note" hidden>Cross-household runs compare only Isolation Forests on the same injected events. The shared model uses training households only; the personal baseline uses the target household's earlier history. Use development households to choose settings and reserve final test households for evaluation. Corrected v2 is required. Daily rolling windows cannot calibrate the personal Isolation Forest: one week has fewer than 10 observations.</p>
 
   <p id="audit" class="audit">Checking weather/gas alignment...</p>
   <section class="panel section">
@@ -118,16 +124,26 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
   </section>
 
   <section class="panel section">
-    <div class="section-head"><h2>Aggregate comparison</h2><p class="note">Rolling metrics are averaged over scored weeks per household, then across households; event counts are summed. No-alert is a negative control. Random controls use each detector's untouched-test alert budget. Synthetic-label comparisons are not verified real-world false-alarm rates.</p></div>
+    <div class="section-head"><h2>Aggregate comparison</h2><p class="note">Metrics are averaged over scored windows and seeds per household, then across households; event counts are summed over repeats. No-alert is a negative control. Random controls use each detector's untouched-test alert budget. Synthetic-label comparisons are not verified real-world false-alarm rates.</p></div>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Direction</th><th>Homes</th><th>Matched / detected / injected</th><th>Precision (homes)</th><th>Recall (homes)</th><th>F1 (homes)</th><th>Unmatched injected</th><th>No-injection alerts/week</th></tr></thead><tbody id="aggregate"><tr><td class="empty" colspan="10">Run a benchmark to see method results.</td></tr></tbody></table></div>
+    <details id="seed-comparison" hidden><summary>Results by injection seed</summary><p class="note">These repeats use the same households and fitted models. Seed variation is not an independent-household confidence interval.</p><div class="table-wrap"><table><thead><tr><th>Seed</th><th>Season</th><th>Method</th><th>Signal</th><th>Direction</th><th>Homes</th><th>Recall</th><th>F1</th></tr></thead><tbody id="seed-aggregate"></tbody></table></div></details>
+  </section>
+
+  <section class="panel section">
+    <div class="section-head"><h2>Seasonal comparison</h2><p class="note">Only seasons covered by test windows appear. Events crossing a seasonal boundary are excluded and counted. Skipped injections are reported for each test window, not assigned to a season. Winter labels span two calendar years. Alerts on unchanged data are not verified false alarms.</p></div>
+    <p id="seasonal-support" class="note">No seasonal results yet.</p>
+    <div class="table-wrap"><table><thead><tr><th>Season</th><th>Method</th><th>Signal</th><th>Direction</th><th>Homes</th><th>Matched / detected / injected</th><th>Precision</th><th>Recall</th><th>F1</th><th>Alerts/week</th></tr></thead><tbody id="seasonal-aggregate"><tr><td class="empty" colspan="10">No seasonal results yet.</td></tr></tbody></table></div>
   </section>
 
   <section class="panel section">
     <div class="section-head"><h2>Household results</h2><p class="note">Inspect the selected home, including event-level scoring.</p></div>
+    <details id="household-groups" hidden><summary>Household group assignments</summary><p id="household-groups-detail" class="note"></p></details>
     <div class="detail-controls"><label>Household / test window<select id="result-household" disabled></select></label><p id="household-summary" class="note">No run completed yet.</p></div>
     <div class="section-head"><h2>Detector support</h2><p class="note">Sufficient support means configured minimum data/window counts were met; it does not guarantee a useful model fit.</p></div>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Status</th><th>Train points</th><th>Calibration points</th><th>Test points</th><th>Train windows</th><th>Calibration windows</th><th>Test windows</th></tr></thead><tbody id="support-diagnostics"><tr><td class="empty" colspan="9">No run completed yet.</td></tr></tbody></table></div>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Direction</th><th>Precision</th><th>Recall</th><th>F1</th><th>Detected</th><th>Injected</th><th>Unmatched injected</th><th>No-injection alerts</th><th>Runtime</th></tr></thead><tbody id="household-metrics"><tr><td class="empty" colspan="11">Run a benchmark to see household results.</td></tr></tbody></table></div>
+    <div class="section-head"><h2>Selected household by season</h2><p class="note">Scores cover this selected test window and seed only.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>Season</th><th>Method</th><th>Signal</th><th>Direction</th><th>Matched / detected / injected</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody id="household-seasonal"><tr><td class="empty" colspan="8">No seasonal results yet.</td></tr></tbody></table></div>
     <div class="section-head"><h2>Injected and detected windows</h2><p class="note">Gold: injected truth. Red/blue: detector output. Select a method to inspect its windows.</p></div>
     <div class="detail-controls"><label>Detector<select id="timeline-method" disabled></select></label><p id="timeline-summary" class="note"></p></div>
     <div class="timeline-wrap"><svg id="timeline" viewBox="0 0 1200 240" role="img" aria-label="Injected truth and detected benchmark event windows"><text class="axis-label" x="20" y="34">Run a benchmark to view event windows.</text></svg></div>
@@ -155,6 +171,7 @@ function escapeHtml(value) {
 }
 function methodLabel(value) {
   if (value === 'no_alert') return 'No alerts (control)';
+  if (value === 'shared_isolation_forest') return 'Shared Isolation Forest';
   if (value.startsWith('random_budget_')) return 'Random at ' + value.slice('random_budget_'.length) + ' alert budget';
   return value;
 }
@@ -176,12 +193,13 @@ function updateSavedSelection() {
     $('saved-details').textContent = 'Select a saved run to see its settings.';
     return;
   }
-  const lookback = selected.lookback_days == null ? 'Unknown' : selected.lookback_days === 1 ? '24 hours' : selected.lookback_days + ' days';
+  const lookback = selected.comparison === 'cross_household' ? 'Not used by Isolation Forest' : selected.lookback_days == null ? 'Unknown' : selected.lookback_days === 1 ? '24 hours' : selected.lookback_days + ' days';
   const patterns = selected.patterns?.length ? selected.patterns.map((pattern) => pattern.replace(/_/g, ' ')).join(', ') : 'Unknown';
   const strengths = selected.strengths?.length ? selected.strengths.map((strength) => Math.round(strength * 100) + '%').join(', ') : 'Unknown';
   $('saved-details').textContent = 'Saved: ' + formatSavedTime(selected.saved_at) +
     ' · Lookback: ' + lookback + ' · Random seed: ' + (selected.seed ?? 'Unknown') +
     ' · Split: ' + formatTrainingSplit(selected.training_weeks) +
+    (selected.comparison === 'cross_household' ? ' · Shared vs personal · ' + selected.evaluation_group + ' households · Household seed: ' + selected.household_seed + ' · Injection seeds: ' + (selected.seed_repeats ?? 1) : '') +
     ' · Patterns: ' + patterns + ' · Strengths: ' + strengths;
 }
 function renderSavedRuns(rows, preferredId = null) {
@@ -189,7 +207,7 @@ function renderSavedRuns(rows, preferredId = null) {
   const select = $('saved-runs');
   const selected = preferredId || select.value;
   select.innerHTML = '<option value="">Select a saved run</option>' + rows.map((row) => {
-    const label = [formatSavedTime(row.saved_at), row.dataset, row.protocol, formatTrainingSplit(row.training_weeks), row.households_completed + '/' + row.households_requested + ' homes'].filter(Boolean).join(' · ');
+    const label = [formatSavedTime(row.saved_at), row.dataset, row.protocol, formatTrainingSplit(row.training_weeks), row.comparison === 'cross_household' ? 'Shared vs personal (' + row.evaluation_group + ')' : null, row.households_completed + '/' + row.households_requested + ' homes'].filter(Boolean).join(' · ');
     return '<option value="' + escapeHtml(row.id) + '">' + escapeHtml(label) + '</option>';
   }).join('');
   if (rows.some((row) => row.id === selected)) select.value = selected;
@@ -227,6 +245,16 @@ function updateHouseholds() {
   $('household').innerHTML = (dataset?.households || []).map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>').join('');
   if ((dataset?.households || []).includes('Klant 34')) $('household').value = 'Klant 34';
 }
+function updateComparisonControls() {
+  const cross = $('comparison').value === 'cross_household';
+  $('evaluation-group-label').hidden = !cross;
+  $('household-seed-label').hidden = !cross;
+  $('seed-repeats-label').hidden = !cross;
+  $('cross-note').hidden = !cross;
+  $('all-households-option').hidden = cross;
+  $('lookback').disabled = cross;
+  $('household-label').hidden = cross || $('all-households').checked;
+}
 async function loadWeatherAudit() {
   const household = $('household').value || 'Klant 34';
   const response = await fetch(API + '/benchmark/weather-audit?household=' + encodeURIComponent(household));
@@ -245,6 +273,37 @@ async function loadWeatherAudit() {
 function renderAggregate(rows) {
   $('aggregate').innerHTML = rows.length ? rows.map((row) => '<tr><td><strong>' + escapeHtml(methodLabel(row.method)) + '</strong></td><td>' + escapeHtml(row.signal) + '</td><td>' + escapeHtml(row.direction) + '</td><td>' + row.households + '</td><td>' + row.matched + ' / ' + row.detected + ' / ' + row.ground_truth + '</td><td>' + pct(row.macro_precision) + ' (' + row.precision_households + ')</td><td>' + pct(row.macro_recall) + ' (' + row.recall_households + ')</td><td class="metric-good">' + pct(row.macro_f1) + ' (' + row.f1_households + ')</td><td>' + row.mean_unmatched_injected_events + '</td><td>' + row.mean_no_injection_events_per_week + '</td></tr>').join('') : '<tr><td colspan="10" class="empty">No scored event classes in this result.</td></tr>';
 }
+function renderSeasonal(seasons) {
+  $('seasonal-support').textContent = seasons.length ? seasons.map((season) =>
+    season.season + ': ' + season.households + ' homes, ' + season.windows + ' windows, ' +
+    season.valid_electricity_points + ' valid electricity and ' + season.valid_gas_points + ' valid gas points; ' +
+    season.excluded_boundary_events + ' boundary event occurrences excluded'
+  ).join(' · ') : 'No seasonal results available for this run.';
+  const rows = seasons.flatMap((season) => season.aggregate.map((row) =>
+    '<tr><td>' + escapeHtml(season.season) + '</td><td>' + escapeHtml(methodLabel(row.method)) +
+    '</td><td>' + escapeHtml(row.signal) + '</td><td>' + escapeHtml(row.direction) +
+    '</td><td>' + row.households + '</td><td>' + row.matched + ' / ' + row.detected + ' / ' + row.ground_truth +
+    '</td><td>' + pct(row.macro_precision) + '</td><td>' + pct(row.macro_recall) +
+    '</td><td>' + pct(row.macro_f1) + '</td><td>' + row.mean_no_injection_events_per_week + '</td></tr>'
+  ));
+  $('seasonal-aggregate').innerHTML = rows.join('') || '<tr><td class="empty" colspan="10">No seasonal event classes to score.</td></tr>';
+}
+function renderSeedComparison(seeds) {
+  $('seed-comparison').hidden = seeds.length < 2;
+  const rows = [];
+  for (const seed of seeds) {
+    const groups = [{season:'All', aggregate:seed.aggregate}, ...(seed.seasonal_aggregate || [])];
+    for (const group of groups) {
+      for (const row of group.aggregate) {
+        rows.push('<tr><td>' + seed.seed + '</td><td>' + escapeHtml(group.season) +
+          '</td><td>' + escapeHtml(methodLabel(row.method)) + '</td><td>' + escapeHtml(row.signal) +
+          '</td><td>' + escapeHtml(row.direction) + '</td><td>' + row.households +
+          '</td><td>' + pct(row.macro_recall) + '</td><td>' + pct(row.macro_f1) + '</td></tr>');
+      }
+    }
+  }
+  $('seed-aggregate').innerHTML = rows.join('') || '<tr><td class="empty" colspan="8">No scored event classes.</td></tr>';
+}
 function renderHousehold(result) {
   if (!result) return;
   const rows = [];
@@ -260,6 +319,18 @@ function renderHousehold(result) {
     }
   }
   $('household-metrics').innerHTML = rows.join('') || '<tr><td colspan="11" class="empty">No event classes to score.</td></tr>';
+  const seasonalRows = [];
+  for (const segment of benchmarkResponse?.seasonal_breakdown === false ? [] : (result.seasonal || [])) {
+    for (const method of segment.methods) {
+      for (const metric of method.scores.classes) {
+        seasonalRows.push('<tr><td>' + escapeHtml(segment.season) + '</td><td>' + escapeHtml(methodLabel(method.method)) +
+          '</td><td>' + escapeHtml(metric.signal) + '</td><td>' + escapeHtml(metric.direction) +
+          '</td><td>' + metric.matched + ' / ' + metric.detected + ' / ' + metric.ground_truth +
+          '</td><td>' + pct(metric.precision) + '</td><td>' + pct(metric.recall) + '</td><td>' + pct(metric.f1) + '</td></tr>');
+      }
+    }
+  }
+  $('household-seasonal').innerHTML = seasonalRows.join('') || '<tr><td class="empty" colspan="8">No seasonal event classes available.</td></tr>';
   $('household-summary').textContent = result.household + ' · ' + result.protocol + ' · seed ' + result.seed + ' · ' + result.resolution_minutes + ' min · test ' + result.date_ranges.test_start.slice(0, 10) + ' to ' + result.date_ranges.test_end.slice(0, 10) + ' · train/calibration/test: ' + result.point_counts.training + ' / ' + result.point_counts.calibration + ' / ' + result.point_counts.test + ' readings';
   const supportRows = [];
   for (const [method, signals] of Object.entries(result.detector_support || {})) {
@@ -283,7 +354,7 @@ function renderHousehold(result) {
 function drawTimeline(result, methodName) {
   const svg = $('timeline');
   const method = result.methods.find((item) => item.method === methodName && item.applicable);
-  const truth = result.ground_truth || [];
+  const truth = (result.ground_truth || []).filter((event) => !method?.supported_signals || method.supported_signals.includes(event.details.signal));
   if (!method) { svg.innerHTML = '<text class="axis-label" x="20" y="34">No applicable detector selected.</text>'; return; }
   const detected = method.detected_events || [];
   const testStart = new Date(result.date_ranges.test_start).getTime();
@@ -304,11 +375,32 @@ function renderResult(response, savedId = null) {
   $('save-current').disabled = !response.results?.length || Boolean(currentSavedResultId);
   $('saved-status').textContent = currentSavedResultId ? 'Saved result ' + currentSavedResultId : 'This displayed result is not saved yet.';
   renderAggregate(response.aggregate || []);
+  renderSeasonal(response.seasonal_aggregate || []);
+  renderSeedComparison(response.seed_aggregates || []);
+  $('household-groups').hidden = !response.household_groups;
+  if (response.household_groups) {
+    $('household-groups-detail').textContent = ['training', 'development', 'test'].map((group) =>
+      group + ': ' + (response.household_groups[group] || []).join(', ')
+    ).join(' · ');
+  }
   const results = response.results || [];
   const select = $('result-household');
-  select.innerHTML = results.map((result,index) => '<option value="' + index + '">' + escapeHtml(result.household + (result.week_index ? ' · test ' + result.date_ranges.test_start.slice(0, 10) + ' to ' + result.date_ranges.test_end.slice(0, 10) : '')) + '</option>').join('');
+  select.innerHTML = results.map((result,index) => '<option value="' + index + '">' + escapeHtml(result.household + (result.week_index ? ' · test ' + result.date_ranges.test_start.slice(0, 10) + ' to ' + result.date_ranges.test_end.slice(0, 10) : '') + (response.seed_repeats > 1 ? ' · seed ' + result.seed : '')) + '</option>').join('');
   select.disabled = results.length <= 1;
-  renderHousehold(results[0]);
+  if (results.length) {
+    renderHousehold(results[0]);
+  } else {
+    $('household-summary').textContent = 'No household results available.';
+    $('support-diagnostics').innerHTML = '<tr><td class="empty" colspan="9">No support diagnostics available.</td></tr>';
+    $('household-metrics').innerHTML = '<tr><td class="empty" colspan="11">No household results available.</td></tr>';
+    $('household-seasonal').innerHTML = '<tr><td class="empty" colspan="8">No seasonal results available.</td></tr>';
+    $('injection-details').innerHTML = '<tr><td class="empty" colspan="7">No injections available.</td></tr>';
+    $('skipped-summary').textContent = '';
+    $('timeline-method').innerHTML = '';
+    $('timeline-method').disabled = true;
+    $('timeline-summary').textContent = '';
+    $('timeline').innerHTML = '<text class="axis-label" x="20" y="34">No household results available.</text>';
+  }
 }
 async function saveDisplayedRun() {
   if (!benchmarkResponse || !benchmarkResponse.results?.length) return;
@@ -370,14 +462,15 @@ async function pollJob(jobId) {
     if (!response.ok) throw new Error('Job status HTTP ' + response.status);
     const job = await response.json();
     const weekFraction = job.total_weeks ? job.completed_weeks / job.total_weeks : 0;
-    const percentComplete = job.total_households ? Math.round(100 * (job.completed_households + (job.status === 'running' ? weekFraction : 0)) / job.total_households) : 0;
+    const percentComplete = job.total_windows ? Math.round(100 * job.completed_windows / job.total_windows) :
+      job.total_households ? Math.round(100 * (job.completed_households + (job.status === 'running' ? weekFraction : 0)) / job.total_households) : 0;
     $('progress-label').textContent = job.status === 'completed' ? 'Benchmark complete' : job.status === 'failed' ? 'Benchmark failed' : 'Processing ' + (job.current_household || 'households');
-    $('progress-count').textContent = job.completed_households + ' / ' + job.total_households + ' homes' + (job.status === 'running' && job.total_weeks ? ' · week ' + job.completed_weeks + ' / ' + job.total_weeks : '');
+    $('progress-count').textContent = job.total_windows ? job.completed_windows + ' / ' + job.total_windows + ' household-window-seed cases' : job.completed_households + ' / ' + job.total_households + ' homes' + (job.status === 'running' && job.total_weeks ? ' · week ' + job.completed_weeks + ' / ' + job.total_weeks : '');
     $('progress-fill').style.width = percentComplete + '%';
     setStatus(job.status === 'completed' ? 'Benchmark complete.' : job.status === 'failed' ? 'Benchmark failed.' : 'Benchmark running...');
     if (job.status === 'completed' || job.status === 'failed') {
       renderResult(job);
-      if (job.errors?.length) setStatus('Benchmark ' + job.status + ': ' + job.errors.map((item) => item.household + ': ' + item.error).join('; '), true);
+      if (job.errors?.length) setStatus('Benchmark ' + job.status + ': ' + job.errors.map((item) => item.household + (item.window ? ' window ' + item.window : '') + ': ' + item.error).join('; '), true);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 900));
@@ -388,18 +481,25 @@ async function runBenchmark() {
   if (!patterns.length) { setStatus('Choose at least one event pattern.', true); return; }
   const strengths = selectedStrengths();
   if (!strengths.length) { setStatus('Choose a strength supported by the selected event patterns.', true); return; }
+  if ($('comparison').value === 'cross_household' && $('protocol').value !== 'corrected_v2') { setStatus('Cross-household comparison requires Corrected v2.', true); return; }
+  if ($('comparison').value === 'cross_household' && $('training-weeks').value && $('dataset').value === 'zonnedael') { setStatus('Daily rolling comparisons have fewer than 10 calibration observations; use hourly or quarter-hour data.', true); return; }
   $('run').disabled = true;
   $('progress-panel').hidden = false;
   setStatus('Preparing chronological benchmark...');
   const request = {
     dataset: $('dataset').value,
     household: $('household').value,
-    all_households: $('all-households').checked,
+    all_households: $('comparison').value === 'personal' && $('all-households').checked,
     patterns,
     strengths,
-    seed: Number($('seed').value || 17),
+    seed: Number($('seed').value),
     lookback_days: Number($('lookback').value),
     training_weeks: $('training-weeks').value ? Number($('training-weeks').value) : null,
+    comparison: $('comparison').value,
+    evaluation_group: $('evaluation-group').value,
+    household_seed: Number($('household-seed').value),
+    seed_repeats: Number($('seed-repeats').value),
+    seasonal_breakdown: $('seasonal-breakdown').checked,
     protocol: $('protocol').value,
   };
   try {
@@ -433,7 +533,8 @@ $('household').addEventListener('change', () => loadWeatherAudit().catch(error =
 $('dataset').addEventListener('change', updateStrengthControls);
 $('weather-pattern').addEventListener('change', updateStrengthControls);
 document.querySelectorAll('.patterns[aria-label="Injected event patterns"] input').forEach((input) => input.addEventListener('change', updateStrengthControls));
-$('all-households').addEventListener('change', () => { $('household-label').hidden = $('all-households').checked; });
+$('all-households').addEventListener('change', updateComparisonControls);
+$('comparison').addEventListener('change', updateComparisonControls);
 $('run').addEventListener('click', runBenchmark);
 $('save-current').addEventListener('click', saveDisplayedRun);
 $('delete-saved').addEventListener('click', deleteSavedRun);
