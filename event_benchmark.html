@@ -75,6 +75,7 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
     <label>Dataset<select id="dataset"></select></label>
     <label id="household-label">Household<select id="household"></select></label>
     <label>Lookback<select id="lookback"><option value="1">24 hours</option><option value="7">7 days</option></select></label>
+    <label>Training split<select id="training-weeks"><option value="">Chronological 70 / 10 / 20</option><option value="2">Rolling: 2 training weeks</option><option value="4">Rolling: 4 training weeks</option><option value="8">Rolling: 8 training weeks</option></select></label>
     <label>Random seed<input id="seed" type="number" min="0" value="17"></label>
     <label>Protocol<select id="protocol"><option value="corrected_v2">Corrected v2</option><option value="legacy_v1">Legacy v1</option></select></label>
     <div class="actions"><button id="run">Run benchmark</button></div>
@@ -96,6 +97,7 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
       <label class="pattern"><input type="checkbox" value="2" checked><span>+200%</span></label>
     </div>
   </section>
+  <p class="note">Rolling splits advance one week at a time: selected training weeks, then one calibration week and one test week. They can take substantially longer; short or missing data may leave detectors or injections unsupported.</p>
 
   <p id="audit" class="audit">Checking weather/gas alignment...</p>
   <section class="panel section">
@@ -116,13 +118,13 @@ svg { display:block; min-width:720px; width:100%; height:240px; background:var(-
   </section>
 
   <section class="panel section">
-    <div class="section-head"><h2>Aggregate comparison</h2><p class="note">No-alert is a negative control. Random controls use each detector's untouched-test alert budget, with seeded random placement. These synthetic-label comparisons are references, not verified real-world false-alarm rates.</p></div>
+    <div class="section-head"><h2>Aggregate comparison</h2><p class="note">Rolling metrics are averaged over scored weeks per household, then across households; event counts are summed. No-alert is a negative control. Random controls use each detector's untouched-test alert budget. Synthetic-label comparisons are not verified real-world false-alarm rates.</p></div>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Direction</th><th>Homes</th><th>Matched / detected / injected</th><th>Precision (homes)</th><th>Recall (homes)</th><th>F1 (homes)</th><th>Unmatched injected</th><th>No-injection alerts/week</th></tr></thead><tbody id="aggregate"><tr><td class="empty" colspan="10">Run a benchmark to see method results.</td></tr></tbody></table></div>
   </section>
 
   <section class="panel section">
     <div class="section-head"><h2>Household results</h2><p class="note">Inspect the selected home, including event-level scoring.</p></div>
-    <div class="detail-controls"><label>Household results<select id="result-household" disabled></select></label><p id="household-summary" class="note">No run completed yet.</p></div>
+    <div class="detail-controls"><label>Household / test window<select id="result-household" disabled></select></label><p id="household-summary" class="note">No run completed yet.</p></div>
     <div class="section-head"><h2>Detector support</h2><p class="note">Sufficient support means configured minimum data/window counts were met; it does not guarantee a useful model fit.</p></div>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Status</th><th>Train points</th><th>Calibration points</th><th>Test points</th><th>Train windows</th><th>Calibration windows</th><th>Test windows</th></tr></thead><tbody id="support-diagnostics"><tr><td class="empty" colspan="9">No run completed yet.</td></tr></tbody></table></div>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Signal</th><th>Direction</th><th>Precision</th><th>Recall</th><th>F1</th><th>Detected</th><th>Injected</th><th>Unmatched injected</th><th>No-injection alerts</th><th>Runtime</th></tr></thead><tbody id="household-metrics"><tr><td class="empty" colspan="11">Run a benchmark to see household results.</td></tr></tbody></table></div>
@@ -163,6 +165,9 @@ function formatSavedTime(value) {
     year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit',
   });
 }
+function formatTrainingSplit(trainingWeeks) {
+  return trainingWeeks == null ? '70 / 10 / 20 or not recorded' : 'Rolling, ' + trainingWeeks + ' training weeks';
+}
 function updateSavedSelection() {
   const selected = savedRuns.find((row) => row.id === $('saved-runs').value);
   $('open-saved').disabled = !selected;
@@ -176,6 +181,7 @@ function updateSavedSelection() {
   const strengths = selected.strengths?.length ? selected.strengths.map((strength) => Math.round(strength * 100) + '%').join(', ') : 'Unknown';
   $('saved-details').textContent = 'Saved: ' + formatSavedTime(selected.saved_at) +
     ' · Lookback: ' + lookback + ' · Random seed: ' + (selected.seed ?? 'Unknown') +
+    ' · Split: ' + formatTrainingSplit(selected.training_weeks) +
     ' · Patterns: ' + patterns + ' · Strengths: ' + strengths;
 }
 function renderSavedRuns(rows, preferredId = null) {
@@ -183,7 +189,7 @@ function renderSavedRuns(rows, preferredId = null) {
   const select = $('saved-runs');
   const selected = preferredId || select.value;
   select.innerHTML = '<option value="">Select a saved run</option>' + rows.map((row) => {
-    const label = [formatSavedTime(row.saved_at), row.dataset, row.protocol, row.households_completed + '/' + row.households_requested + ' homes'].filter(Boolean).join(' · ');
+    const label = [formatSavedTime(row.saved_at), row.dataset, row.protocol, formatTrainingSplit(row.training_weeks), row.households_completed + '/' + row.households_requested + ' homes'].filter(Boolean).join(' · ');
     return '<option value="' + escapeHtml(row.id) + '">' + escapeHtml(label) + '</option>';
   }).join('');
   if (rows.some((row) => row.id === selected)) select.value = selected;
@@ -254,7 +260,7 @@ function renderHousehold(result) {
     }
   }
   $('household-metrics').innerHTML = rows.join('') || '<tr><td colspan="11" class="empty">No event classes to score.</td></tr>';
-  $('household-summary').textContent = result.household + ' · ' + result.protocol + ' · seed ' + result.seed + ' · ' + result.resolution_minutes + ' min · train/calibration/test: ' + result.point_counts.training + ' / ' + result.point_counts.calibration + ' / ' + result.point_counts.test + ' readings';
+  $('household-summary').textContent = result.household + ' · ' + result.protocol + ' · seed ' + result.seed + ' · ' + result.resolution_minutes + ' min · test ' + result.date_ranges.test_start.slice(0, 10) + ' to ' + result.date_ranges.test_end.slice(0, 10) + ' · train/calibration/test: ' + result.point_counts.training + ' / ' + result.point_counts.calibration + ' / ' + result.point_counts.test + ' readings';
   const supportRows = [];
   for (const [method, signals] of Object.entries(result.detector_support || {})) {
     for (const [signal, support] of Object.entries(signals)) {
@@ -300,7 +306,7 @@ function renderResult(response, savedId = null) {
   renderAggregate(response.aggregate || []);
   const results = response.results || [];
   const select = $('result-household');
-  select.innerHTML = results.map((result,index) => '<option value="' + index + '">' + escapeHtml(result.household) + '</option>').join('');
+  select.innerHTML = results.map((result,index) => '<option value="' + index + '">' + escapeHtml(result.household + (result.week_index ? ' · test ' + result.date_ranges.test_start.slice(0, 10) + ' to ' + result.date_ranges.test_end.slice(0, 10) : '')) + '</option>').join('');
   select.disabled = results.length <= 1;
   renderHousehold(results[0]);
 }
@@ -363,13 +369,15 @@ async function pollJob(jobId) {
     const response = await fetch(API + '/benchmark/jobs/' + encodeURIComponent(jobId));
     if (!response.ok) throw new Error('Job status HTTP ' + response.status);
     const job = await response.json();
-    const percentComplete = job.total_households ? Math.round(100 * job.completed_households / job.total_households) : 0;
+    const weekFraction = job.total_weeks ? job.completed_weeks / job.total_weeks : 0;
+    const percentComplete = job.total_households ? Math.round(100 * (job.completed_households + (job.status === 'running' ? weekFraction : 0)) / job.total_households) : 0;
     $('progress-label').textContent = job.status === 'completed' ? 'Benchmark complete' : job.status === 'failed' ? 'Benchmark failed' : 'Processing ' + (job.current_household || 'households');
-    $('progress-count').textContent = job.completed_households + ' / ' + job.total_households;
+    $('progress-count').textContent = job.completed_households + ' / ' + job.total_households + ' homes' + (job.status === 'running' && job.total_weeks ? ' · week ' + job.completed_weeks + ' / ' + job.total_weeks : '');
     $('progress-fill').style.width = percentComplete + '%';
     setStatus(job.status === 'completed' ? 'Benchmark complete.' : job.status === 'failed' ? 'Benchmark failed.' : 'Benchmark running...');
     if (job.status === 'completed' || job.status === 'failed') {
       renderResult(job);
+      if (job.errors?.length) setStatus('Benchmark ' + job.status + ': ' + job.errors.map((item) => item.household + ': ' + item.error).join('; '), true);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 900));
@@ -391,6 +399,7 @@ async function runBenchmark() {
     strengths,
     seed: Number($('seed').value || 17),
     lookback_days: Number($('lookback').value),
+    training_weeks: $('training-weeks').value ? Number($('training-weeks').value) : null,
     protocol: $('protocol').value,
   };
   try {

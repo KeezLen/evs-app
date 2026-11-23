@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta
 
+import pytest
+
+import event_detection.evaluation.benchmark as benchmark_module
 from event_detection.evaluation.benchmark import (
     chronological_split,
     detector_support_diagnostics,
     generate_benchmark_cases,
     injection_specs,
     random_budget_events,
+    rolling_weekly_splits,
 )
 from event_detection.evaluation.matching import match_event_windows, summarize_benchmark_events
 from event_detection.schemas import Event, SeriesPoint
@@ -50,6 +54,47 @@ def test_chronological_split_uses_70_10_20_and_preserves_order():
     assert (len(parts.training), len(parts.calibration), len(parts.test)) == (70, 10, 20)
     assert parts.training[-1].timestamp < parts.calibration[0].timestamp
     assert parts.calibration[-1].timestamp < parts.test[0].timestamp
+
+
+@pytest.mark.parametrize("training_weeks", [2, 4, 8])
+def test_rolling_weekly_splits_use_preceding_weeks_and_exclude_partial_test(training_weeks):
+    points = _series((training_weeks + 4) * 7 * 24 + 12, interval_minutes=60)
+    splits = rolling_weekly_splits(list(reversed(points)), training_weeks)
+
+    assert len(splits) == 3
+    for index, parts in enumerate(splits):
+        assert len(parts.training) == training_weeks * 7 * 24
+        assert len(parts.calibration) == len(parts.test) == 7 * 24
+        assert parts.training[0].timestamp == datetime(2013, 1, 1) + timedelta(weeks=index)
+        assert parts.training[-1].timestamp + timedelta(hours=1) == parts.calibration[0].timestamp
+        assert parts.calibration[-1].timestamp + timedelta(hours=1) == parts.test[0].timestamp
+    assert splits[0].test[-1].timestamp + timedelta(hours=1) == splits[1].test[0].timestamp
+
+
+def test_rolling_weekly_split_rejects_insufficient_or_missing_partitions():
+    with pytest.raises(ValueError, match="at least 4 weeks"):
+        rolling_weekly_splits(_series(27, interval_minutes=1440), 2)
+    points = _series(28, interval_minutes=1440)
+    with pytest.raises(ValueError, match="empty partition"):
+        rolling_weekly_splits(points[:14] + points[21:], 2)
+
+
+def test_rolling_benchmark_runs_detectors_and_reports_progress(monkeypatch):
+    points = _series(28 * 24, interval_minutes=60)
+    monkeypatch.setattr(benchmark_module, "get_series", lambda dataset, household: points)
+    progress = []
+    results = benchmark_module.run_household_rolling_benchmark(
+        "test", "A", ["spikes"], 17, False, 1, [0.5], "corrected_v2", 2,
+        on_progress=lambda completed, total: progress.append((completed, total)),
+    )
+
+    assert progress == [(0, 1), (1, 1)]
+    assert len(results) == 1
+    result = results[0]
+    assert result["point_counts"] == {"training": 336, "calibration": 168, "test": 168}
+    assert result["date_ranges"]["test_start"] == datetime(2013, 1, 22)
+    assert result["ground_truth"]
+    assert {"isolation_forest", "rnn"} <= {method["method"] for method in result["methods"]}
 
 
 def test_benchmark_injections_are_deterministic_and_do_not_mutate_source():

@@ -169,6 +169,55 @@ def test_benchmark_macro_excludes_undefined_metrics_and_reports_support():
     assert (row["detected"], row["ground_truth"], row["matched"]) == (2, 3, 1)
 
 
+def test_rolling_aggregate_gives_each_household_equal_weight():
+    def result(household, recall):
+        metric = {"signal": "electricity", "direction": "high", "precision": recall,
+                  "recall": recall, "f1": recall, "detected": 1, "ground_truth": 1,
+                  "matched": int(recall), "false_positives": int(not recall)}
+        return {"household": household, "methods": [{"method": "test", "applicable": True,
+                "normal_scores": {"classes": []}, "scores": {"classes": [metric]}}]}
+
+    row = api_module._benchmark_aggregate([
+        result("A", 0.0), result("A", 0.0), result("B", 1.0),
+    ])[0]
+    assert (row["households"], row["windows"], row["recall_households"]) == (2, 3, 2)
+    assert row["macro_recall"] == 0.5
+    assert (row["detected"], row["ground_truth"], row["matched"]) == (3, 3, 1)
+
+
+def test_rolling_single_household_queues_and_saves_all_weeks(monkeypatch, tmp_path):
+    monkeypatch.setattr(api_module, "_BENCHMARK_RESULT_DIR", tmp_path)
+    submitted = []
+    monkeypatch.setattr(api_module._BENCHMARK_EXECUTOR, "submit", lambda *args: submitted.append(args))
+    monkeypatch.setattr(api_module, "audit_weather_linkage", lambda household: {"weather_gas_enabled": False})
+
+    def rolling(dataset, household, patterns, seed, weather_gas_enabled, lookback, strengths,
+                protocol, training_weeks, on_progress):
+        assert household == "Klant 34"
+        assert training_weeks == 4
+        on_progress(1, 2)
+        return [{"household": household, "methods": [], "week_index": index} for index in (1, 2)]
+
+    monkeypatch.setattr(api_module, "run_household_rolling_benchmark", rolling)
+    client = TestClient(app)
+    response = client.post("/benchmark", json={
+        "dataset": "zonnedael", "household": "Klant 34", "training_weeks": 4,
+    })
+    assert response.status_code == 200
+    assert response.json()["total_households"] == 1
+    function, *args = submitted[0]
+    function(*args)
+    job = client.get(f"/benchmark/jobs/{response.json()['job_id']}").json()
+    assert job["status"] == "completed"
+    assert len(job["results"]) == 2
+    assert job["all_households"] is False
+    assert job["training_weeks"] == 4
+    saved = client.get("/benchmark/saved").json()[0]
+    assert saved["training_weeks"] == 4
+    assert (saved["households_completed"], saved["households_requested"]) == (1, 1)
+    assert client.post("/benchmark", json={"dataset": "zonnedael", "training_weeks": 3}).status_code == 422
+
+
 def test_all_household_benchmark_queues_progress_job(monkeypatch):
     monkeypatch.setattr(
         api_module,

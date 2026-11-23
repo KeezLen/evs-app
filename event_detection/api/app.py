@@ -17,7 +17,7 @@ from event_detection.config import settings
 from event_detection.data import available_datasets, get_series
 from event_detection.anomaly import IsolationForestAnomalyDetector, RNNForecastDetector
 from event_detection.evaluation.matching import match_events
-from event_detection.evaluation.benchmark import run_household_benchmark
+from event_detection.evaluation.benchmark import run_household_benchmark, run_household_rolling_benchmark
 from event_detection.evaluation.scenarios import load_scenario
 from event_detection.evaluation.weather_audit import audit_weather_linkage
 from event_detection.nilm import detector_registry
@@ -55,7 +55,7 @@ def _saved_benchmark_metadata(record: dict) -> dict:
     )}
     result = record.get("result", {})
     first_result = next(iter(result.get("results", [])), {})
-    for key in ("seed", "lookback_days", "patterns", "strengths"):
+    for key in ("seed", "lookback_days", "training_weeks", "patterns", "strengths"):
         if metadata.get(key) is None:
             metadata[key] = result.get(key)
         if metadata[key] is None:
@@ -77,7 +77,7 @@ def _persist_benchmark_result(result: dict, source: str) -> dict:
         "dataset": result_data.get("dataset", first_result.get("dataset")),
         "protocol": result_data.get("protocol", first_result.get("protocol", "unknown")),
         "seed": result_data.get("seed", first_result.get("seed")),
-        "households_completed": len(result_data.get("results", [])),
+        "households_completed": len({row.get("household") for row in result_data.get("results", [])}),
         "households_requested": result_data.get("total_households", len(result_data.get("results", []))),
         "error_count": len(result_data.get("errors", [])),
         "result": result_data,
@@ -347,28 +347,39 @@ def _benchmark_aggregate(results: list[dict]) -> list[dict]:
                 })
     aggregate = []
     for (method, signal, direction), rows in sorted(grouped.items()):
+        by_household: dict[str, list[dict]] = {}
+        for row in rows:
+            by_household.setdefault(row["household"], []).append(row)
+
+        def household_means(name: str) -> list[float]:
+            means = []
+            for household_rows in by_household.values():
+                values = [row[name] for row in household_rows if row[name] is not None]
+                if values:
+                    means.append(sum(values) / len(values))
+            return means
+
         def metric_mean(name: str) -> float | None:
-            values = [row[name] for row in rows if row[name] is not None]
+            values = household_means(name)
             return round(sum(values) / len(values), 4) if values else None
 
         aggregate.append({
             "method": method,
             "signal": signal,
             "direction": direction,
-            "households": len(rows),
+            "households": len(by_household),
+            "windows": len(rows),
             "macro_precision": metric_mean("precision"),
             "macro_recall": metric_mean("recall"),
             "macro_f1": metric_mean("f1"),
-            "precision_households": sum(row["precision"] is not None for row in rows),
-            "recall_households": sum(row["recall"] is not None for row in rows),
-            "f1_households": sum(row["f1"] is not None for row in rows),
+            "precision_households": len(household_means("precision")),
+            "recall_households": len(household_means("recall")),
+            "f1_households": len(household_means("f1")),
             "detected": sum(row["detected"] for row in rows),
             "ground_truth": sum(row["ground_truth"] for row in rows),
             "matched": sum(row["matched"] for row in rows),
-            "mean_unmatched_injected_events": round(sum(row["false_positives"] for row in rows) / len(rows), 3),
-            "mean_no_injection_events_per_week": round(
-                sum(row["normal_events_per_week"] for row in rows) / len(rows), 3
-            ),
+            "mean_unmatched_injected_events": round(sum(household_means("false_positives")) / len(by_household), 3),
+            "mean_no_injection_events_per_week": round(sum(household_means("normal_events_per_week")) / len(by_household), 3),
         })
     return aggregate
 
@@ -384,18 +395,30 @@ def _run_benchmark_job(
     results: list[dict] = []
     errors: list[dict[str, str]] = []
     for index, household in enumerate(households):
+        with _BENCHMARK_JOBS_LOCK:
+            _BENCHMARK_JOBS[job_id].update({
+                "current_household": household,
+                "completed_weeks": 0,
+                "total_weeks": None,
+            })
         try:
-            result = run_household_benchmark(
-                request.dataset,
-                household,
-                request.patterns,
-                request.seed,
-                bool(weather_audit["weather_gas_enabled"]),
-                request.lookback_days,
-                request.strengths,
-                request.protocol,
+            args = (
+                request.dataset, household, request.patterns, request.seed,
+                bool(weather_audit["weather_gas_enabled"]), request.lookback_days,
+                request.strengths, request.protocol,
             )
-            results.append(result)
+            if request.training_weeks is None:
+                results.append(run_household_benchmark(*args))
+            else:
+                def report_progress(completed: int, total: int) -> None:
+                    with _BENCHMARK_JOBS_LOCK:
+                        _BENCHMARK_JOBS[job_id].update({
+                            "completed_weeks": completed, "total_weeks": total,
+                        })
+
+                results.extend(run_household_rolling_benchmark(
+                    *args, request.training_weeks, on_progress=report_progress,
+                ))
         except Exception as error:
             errors.append({"household": household, "error": str(error)})
         with _BENCHMARK_JOBS_LOCK:
@@ -404,13 +427,15 @@ def _run_benchmark_job(
                 "current_household": household,
                 "results": results.copy(),
                 "errors": errors.copy(),
+                "completed_weeks": 0,
+                "total_weeks": None,
             })
     completed_job = {
         "job_id": job_id,
         "status": "completed" if results else "failed",
         "total_households": len(households),
-        "all_households": True,
-        "completed_households": len(results) + len(errors),
+        "all_households": request.all_households,
+        "completed_households": len(households),
         "results": results,
         "errors": errors,
         "aggregate": _benchmark_aggregate(results),
@@ -421,6 +446,7 @@ def _run_benchmark_job(
         "strengths": request.strengths,
         "seed": request.seed,
         "lookback_days": request.lookback_days,
+        "training_weeks": request.training_weeks,
     }
     try:
         saved_metadata = _persist_benchmark_result(completed_job, "background")
@@ -465,7 +491,7 @@ def start_benchmark(request: BenchmarkRequest):
         weather_audit = audit_weather_linkage(audit_household)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    if request.all_households:
+    if request.all_households or request.training_weeks is not None:
         job_id = uuid4().hex
         with _BENCHMARK_JOBS_LOCK:
             _BENCHMARK_JOBS[job_id] = {

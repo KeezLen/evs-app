@@ -1,7 +1,8 @@
 """Deterministic held-out benchmark preparation and scoring utilities."""
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import timedelta
 import math
@@ -47,6 +48,43 @@ def chronological_split(points: Sequence[SeriesPoint]) -> BenchmarkPartitions:
         calibration=ordered[training_end:calibration_end],
         test=ordered[calibration_end:],
     )
+
+
+def rolling_weekly_splits(points: Sequence[SeriesPoint], training_weeks: int) -> list[BenchmarkPartitions]:
+    """Create full, non-overlapping test weeks with preceding training and calibration."""
+    if training_weeks not in {2, 4, 8}:
+        raise ValueError("Training weeks must be 2, 4, or 8")
+    ordered = sorted(points, key=lambda point: point.timestamp)
+    if not ordered:
+        raise ValueError("No readings available for rolling benchmark")
+    resolution = ordered[0].interval_minutes
+    if any(point.interval_minutes != resolution for point in ordered):
+        raise ValueError("Rolling benchmark requires a consistent resolution")
+    timestamps = [point.timestamp for point in ordered]
+    start = timestamps[0]
+    end = timestamps[-1] + timedelta(minutes=resolution)
+    week = timedelta(weeks=1)
+    splits = []
+    while start + (training_weeks + 2) * week <= end:
+        calibration_start = start + training_weeks * week
+        test_start = calibration_start + week
+        test_end = test_start + week
+        training_index = bisect_left(timestamps, start)
+        calibration_index = bisect_left(timestamps, calibration_start)
+        test_index = bisect_left(timestamps, test_start)
+        end_index = bisect_left(timestamps, test_end)
+        partitions = BenchmarkPartitions(
+            training=ordered[training_index:calibration_index],
+            calibration=ordered[calibration_index:test_index],
+            test=ordered[test_index:end_index],
+        )
+        if not partitions.training or not partitions.calibration or not partitions.test:
+            raise ValueError(f"Rolling window starting {start.isoformat()} has an empty partition")
+        splits.append(partitions)
+        start += week
+    if not splits:
+        raise ValueError(f"Rolling benchmark requires at least {training_weeks + 2} weeks of readings")
+    return splits
 
 
 def injection_specs(
@@ -461,6 +499,23 @@ def run_household_benchmark(
     """Run normal and injected held-out data through all applicable detectors."""
     points = get_series(dataset, household)
     partitions = chronological_split(points)
+    return _run_partition_benchmark(
+        dataset, household, partitions, patterns, seed, weather_gas_enabled,
+        lookback_days, strengths, protocol,
+    )
+
+
+def _run_partition_benchmark(
+    dataset: str,
+    household: str,
+    partitions: BenchmarkPartitions,
+    patterns: Sequence[str],
+    seed: int,
+    weather_gas_enabled: bool,
+    lookback_days: int,
+    strengths: Sequence[float] | None,
+    protocol: str,
+) -> dict[str, object]:
     diagnostics = detector_support_diagnostics(partitions, lookback_days)
     skipped: list[dict] = []
     injected_test, truth = generate_benchmark_cases(
@@ -472,7 +527,7 @@ def run_household_benchmark(
         protocol,
         skipped,
     )
-    resolution = points[0].interval_minutes
+    resolution = partitions.training[0].interval_minutes
     duration_hours = (
         (partitions.test[-1].timestamp - partitions.test[0].timestamp).total_seconds() / 3600
         + resolution / 60
@@ -613,3 +668,31 @@ def run_household_benchmark(
         "ground_truth": truth,
         "methods": method_results,
     }
+
+
+def run_household_rolling_benchmark(
+    dataset: str,
+    household: str,
+    patterns: Sequence[str],
+    seed: int,
+    weather_gas_enabled: bool,
+    lookback_days: int,
+    strengths: Sequence[float] | None,
+    protocol: str,
+    training_weeks: int,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> list[dict[str, object]]:
+    partitions = rolling_weekly_splits(get_series(dataset, household), training_weeks)
+    results = []
+    if on_progress is not None:
+        on_progress(0, len(partitions))
+    for index, split in enumerate(partitions):
+        result = _run_partition_benchmark(
+            dataset, household, split, patterns, seed, weather_gas_enabled,
+            lookback_days, strengths, protocol,
+        )
+        result.update({"training_weeks": training_weeks, "week_index": index + 1})
+        results.append(result)
+        if on_progress is not None:
+            on_progress(index + 1, len(partitions))
+    return results

@@ -46,12 +46,20 @@ date filtering. The selected date range is the detection window; Isolation
 Forest and RNN automatically use earlier available household readings as
 training history when enough data exists.
 
-For controlled detector comparisons, open `event_benchmark.html`. Select a
-household for an immediate run, or choose all included households to run a
-background batch with progress. The benchmark splits each series chronologically
-70%/10%/20% for training, calibration, and test, and injects labeled changes
-only into an in-memory copy of the test partition. These are synthetic
-sensitivity tests, not appliance labels or naturally observed faults.
+For controlled detector comparisons, open `event_benchmark.html`. The default
+split is chronological 70%/10%/20% for training, calibration, and test.
+Alternatively choose 2, 4, or 8 rolling training weeks, followed by one
+calibration week and one test week. Each window advances by one week from the
+first reading; the final incomplete test week is excluded. Rolling runs and
+all-household runs execute in the background and can take substantially longer.
+Inspect each household/test week in the result selector. Rolling aggregate
+metrics average scored weeks per household, then average households; event
+counts are summed. Detector support and skipped injections are reported per
+window. For example, two weeks of daily training do not meet Isolation Forest's
+minimum of 30 valid points. Injections use the selected training window's
+baseline, so runs with different windows do not necessarily contain identical
+synthetic events. Changes are injected only into an in-memory test copy; they
+are synthetic sensitivity tests, not appliance labels or naturally observed faults.
 
 To use the event-detection tab, start the API and open `index.html`. Select
 `Zonnedael`, enter an included household such as `Klant 34`, optionally choose
@@ -77,7 +85,9 @@ visible as breaks in the chart.
   coverage, date alignment, temperature summary differences, and gas
   reconciliation.
 - `POST /benchmark` runs one household synchronously or queues all included
-  households and returns a job ID. Poll `GET /benchmark/jobs/{job_id}` for
+  households and returns a job ID. Setting `training_weeks` to `2`, `4`, or
+  `8` queues a rolling weekly run even for one household; omit it or use
+  `null` for the default split. Poll `GET /benchmark/jobs/{job_id}` for
   progress and results. Completed single-household and background runs are
   automatically saved as JSON in the repository's `benchmark_results/`
   directory. These files are local and git-ignored.
