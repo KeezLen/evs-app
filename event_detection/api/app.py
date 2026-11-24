@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from event_detection.config import settings
+from event_detection.financial_control import FinancialControl
 from event_detection.household_profile import build_profile
 from event_detection.data import available_datasets, get_series
 from event_detection.anomaly.placeholder import PlaceholderAnomalyDetector
@@ -143,6 +144,10 @@ def profile_build(request: ProfileRequest):
     try:
         points = get_series(request.dataset, request.household)
         profile = build_profile(points, request.household, request.home.model_dump())
+        finances = FinancialControl()
+        profile["annual_energy"] = finances.from_meter_year(points, points[-1].timestamp.year)
+        "test calc (not used) ^"
+        profile["recent_annual_energy"] = finances.from_recent_meter_days(points)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return ProfileResponse(dataset=request.dataset, profile=profile)

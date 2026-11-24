@@ -13,7 +13,6 @@
   --accent: #F2B705;
   --ink: #1A1A1A;
   --surface: #FFFFFF;
-
   --font-base: 20px;   /* Report 6's validated default text size */
   --tap-min: 48px;
   --radius: 14px;
@@ -125,6 +124,8 @@ body {
        border-radius: var(--radius); cursor: pointer; padding: 12px; }
 .btn.ghost { background: transparent; color: var(--green-900); border: 2px solid var(--green-600); }
 .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.tip-dismiss-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.tip-dismiss-actions .btn { flex: none; font-size: 15px; padding: 5px 10px; }
 
 /* --- Tab bar --- */
 .tabbar { display: flex; border-top: 1px solid #d3ddd6; background: var(--surface); }
@@ -144,6 +145,7 @@ body {
 .stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 5px 0; }
 .stat-label { flex: 1; font-size: 17px; }
 .stat-value { font-weight: 700; font-size: 21px; color: var(--green-900); }
+.annual-energy-baseline .stat-value { color: var(--green-600); }
 .stat-hint { flex-basis: 100%; font-size: 14px; color: #4a5a50; }
 .note { font-size: 15px; color: #3c4d43; margin: .5em 0 0; }
 
@@ -1933,6 +1935,7 @@ function defaultState() {
     // Which slice the Savings screen shows, and which challenges are listed.
     period: 'month',
     challengeFilter: 'active',
+    tipStatuses: {},
   };
 }
 
@@ -1953,8 +1956,17 @@ function hydrate(stored) {
     ...stored,
     consent: { ...base.consent, ...(stored.consent ?? {}) },
     home: { ...base.home, ...(stored.home ?? {}) },
+    tipStatuses: stored.tipStatuses ?? base.tipStatuses,
     language: LANGUAGES.includes(stored.language) ? stored.language : base.language,
   };
+}
+
+// Recommendations can use this to check a tip's status.
+// (recommendation engine could call this function to filter out
+// adopted or dismissed tips before ranking the remaining ones )
+// since now there is a button to mark when a user started using a tip **//
+function tipStatus(state, id) {
+  return state.tipStatuses[id] ?? { status: 'available' };
 }
 
 /** True when the tenant has agreed to the item. Unknown items are refused. */
@@ -3577,18 +3589,208 @@ function renderChallenges(app, state, lang) {
     + '<p class="note">' + intro + '</p>' + items;
 }
 
+// Shows annual usage, cost, and rates in the household profile.
+function annualEnergyRows(estimate, lang) {
+  const label = (nl, en) => say(nl, en, lang);
+  const units = new Intl.NumberFormat(lang, { maximumFractionDigits: 0 });
+  const euros = new Intl.NumberFormat(lang, { style: 'currency', currency: 'EUR' });
+  const usage = (value, unit) => value == null ? '—' : units.format(value) + ' ' + unit;
+  return statRow(label('Indicatieve kosten voor energieverbruik per jaar', 'Indicative yearly energy consumption costs'),
+      estimate.annual_cost_eur == null ? '—' : euros.format(estimate.annual_cost_eur))
+    + statRow(label('Gas per jaar', 'Gas per year'), usage(estimate.gas_m3, 'm³'))
+    + statRow(label('Stroom per jaar', 'Electricity per year'), usage(estimate.electricity_kwh, 'kWh'))
+    + '<p class="note">' + label('Rekentarieven', 'Assumed rates') + ' · '
+      + euros.format(estimate.gas_rate) + '/m³ · ' + euros.format(estimate.electricity_rate) + '/kWh. '
+      + label('Exclusief vaste kosten.', 'Fixed charges are excluded.') + '</p>'
+    + (estimate.annual_cost_eur == null ? '<p class="note">'
+      + label('Te weinig gegevens voor een totaalbedrag.', 'Too little data to estimate the total cost.') + '</p>' : '');
+}
+
+const TIP_OVERLAPS = [
+  { tipIds: ['thermostat', 'unusedroom'] },
+];
+
+// Explanations for financial control
+function meterEstimateDetails(estimate, lang) {
+  const label = (nl, en) => say(nl, en, lang);
+  return escapeHtml(estimate.window_start + ' – ' + estimate.window_end) + '. '
+    + label(
+      'Geldige dagen: gas ' + estimate.gas_days + '/90, stroom ' + estimate.electricity_days + '/90.',
+      'Valid days: gas ' + estimate.gas_days + '/90, electricity ' + estimate.electricity_days + '/90.')
+    + ' ' + label(
+      'Minstens ' + estimate.minimum_days + ' geldige dagen per soort energie. Ontbrekende dagen tellen niet mee. Gas wordt gecorrigeerd met weergegevens over het jaar. Stroom gebruikt het gemiddelde van geldige dagen, wat het jaarverbruik kan overschatten.',
+      'At least ' + estimate.minimum_days + ' valid days are needed per fuel. Missing days are skipped. Gas is adjusted using weather across the year. Electricity uses the average of valid days, which may overestimate yearly use.')
+    + (estimate.seasonal_weather_available ? '' : ' ' + label(
+      'Er zijn te weinig weergegevens voor een jaarschatting van gas.',
+      'There is too little weather data to estimate annual gas use.'));
+}
+
+// Loads and displays the yearly estimate and potential savings in Tips.
+async function mountAnnualEnergy(container, app, state, lang) {
+  const result = container.querySelector('[data-annual-energy]');
+  const label = (nl, en) => say(nl, en, lang);
+  const meter = app.meterEnergy;
+  if (!meter) return;
+  try {
+    if (!meter.estimate) {
+      const response = await buildMeterProfile(meter.dataset, meter.household);
+      meter.estimate = response.profile.recent_annual_energy;
+      if (!meter.estimate) throw new Error('Missing recent annual estimate');
+    }
+    const estimate = meter.estimate;
+    if (!result.isConnected) return;
+    const euros = new Intl.NumberFormat(lang, { style: 'currency', currency: 'EUR' });
+    // Zonnedael readings came before these tip choices, so use full tip estimates.
+    const projected = projectedTipCosts(estimate, [], state);
+    const savings = projected?.low == null ? '' : projected.low === projected.high
+      ? euros.format(estimate.annual_cost_eur - projected.low)
+      : euros.format(estimate.annual_cost_eur - projected.high) + ' – '
+        + euros.format(estimate.annual_cost_eur - projected.low);
+    result.innerHTML = '<div class="annual-energy-baseline">'
+      + statRow(label('Indicatieve kosten voor energieverbruik per jaar', 'Indicative yearly energy consumption costs'),
+        estimate.annual_cost_eur == null ? '—' : euros.format(estimate.annual_cost_eur))
+      + '</div>'
+      + '<p class="note">' + escapeHtml(meter.source + ' · ' + meter.household) + '</p>'
+      + '<p class="note">' + label('Exclusief vaste kosten.', 'Fixed charges excluded.') + '</p>'
+      + (estimate.annual_cost_eur == null ? '<p class="note">'
+        + label('Te weinig gegevens voor een totaalbedrag.', 'Too little data to estimate the total cost.') + '</p>' : '')
+      + (projected?.low != null
+        ? statRow(label('Mogelijke besparing per jaar', 'Potential yearly savings'), savings)
+          + statRow(label('Geschatte jaarkosten na tips', 'Estimated annual cost after tips'),
+          euros.format(projected.low))
+          + '<p class="note">' + label(
+            'De metingen zijn historisch. De gekozen tips vormen een voorbeeld.',
+            'These readings are historical. The selected tips are an illustrative scenario.')
+          + (projected.low === projected.high ? '' : ' ' + label(
+            'Dit is het laagste kostenscenario. Als tips overlappen, kunnen de kosten hoger uitvallen.',
+            'This is the lower-cost scenario. Costs may be higher if tips overlap.')) + '</p>'
+        : '')
+      + (projected?.needsReview ? '<p class="note">' + (projected.low == null ? label(
+        'Voor deze combinatie is een aparte berekening nodig.',
+        'This combination needs a separate calculation.') : label(
+        'Sommige gekozen tips vragen om een aparte berekening en zijn buiten dit voorbeeld gelaten.',
+        'Some selected tips need a separate calculation and are excluded from this example.')) + '</p>' : '')
+      + '<details><summary>' + label('Hoe is dit berekend?', 'How was this calculated?') + '</summary>'
+      + '<p class="note">' + meterEstimateDetails(estimate, lang)
+      + ' ' + label('Rekentarieven', 'Assumed rates') + ' · ' + euros.format(estimate.gas_rate) + '/m³ · '
+      + euros.format(estimate.electricity_rate) + '/kWh.</p></details>';
+  } catch {
+    if (!result.isConnected) return;
+    result.textContent = meter.source + ' · ' + meter.household + '. ' + label(
+      'Jaarschatting niet beschikbaar. Herstart de lokale API en open Tips opnieuw.',
+      'Annual estimate unavailable. Restart the local API and reopen Tips.');
+  }
+}
+
+// Estimates how much of a tip's saving may still be missing from the readings.
+function remainingTipEuros(tip, adoptedOn, history) {
+  let totalWeight = 0;
+  let weightBeforeAdoption = 0;
+  for (const reading of history) {
+    // The day the tip was adopted can include use from before the change.
+    const weight = tip.heating ? hdd(reading.temp_avg_c, BALANCE_POINT_C) : 1;
+    totalWeight += weight;
+    if (reading.date <= adoptedOn) weightBeforeAdoption += weight;
+  }
+  //takes into account outside temperature when space-heating tips start
+  return totalWeight ? tip.euroPerYear * weightBeforeAdoption / totalWeight : tip.euroPerYear;
+}
+
+// Calculates yearly costs after adopted tips, allowing for overlap.
+function projectedTipCosts(estimate, history, state, tips = TIPS, overlaps = TIP_OVERLAPS) {
+  if (estimate.annual_cost_eur == null) return null;
+  const groups = new Map();
+  for (const tip of tips) {
+    const status = tipStatus(state, tip.id);
+    if (status.status !== 'adopted') continue;
+    const key = overlaps.find(({ tipIds }) => tipIds.includes(tip.id)) ?? tip.id;
+    const remaining = remainingTipEuros(tip, status.adoptedOn, history);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ tip, remaining });
+  }
+  if (!groups.size) return null;
+
+  const minimum = { gas: 0, elec: 0 };
+  const maximum = { gas: 0, elec: 0 };
+  let needsReview = false;
+  let includedGroups = 0;
+  for (const [key, group] of groups) {
+    const fuel = group[0].tip.fuel;
+    if (group.length > 1 && (key.needsReview || group.some(({ tip }) => tip.fuel !== fuel))) {
+      needsReview = true;
+      continue;
+    }
+    const amounts = group.map(({ remaining }) => remaining);
+    minimum[fuel] += Math.max(...amounts);
+    maximum[fuel] += amounts.reduce((sum, amount) => sum + amount, 0);
+    includedGroups++;
+  }
+  if (!includedGroups) return { low: null, high: null, needsReview };
+
+  const costAfter = savings => {
+    const gasSaving = Math.min(estimate.gas_m3 * estimate.gas_rate, savings.gas);
+    const electricitySaving = Math.min(estimate.electricity_kwh * estimate.electricity_rate, savings.elec);
+    const cost = estimate.annual_cost_eur - gasSaving - electricitySaving;
+    return Math.round(Math.max(0, cost) * 100) / 100;
+  };
+  return {
+    low: costAfter(maximum),
+    high: costAfter(minimum),
+    needsReview,
+  };
+}
+
+// dismissal button options
+function dismissedTipReason(reason, lang) {
+  return reason === 'already_in_use'
+    ? say('Ik doe dit al', 'I already do this', lang)
+    : say('Geen interesse', 'I’m not interested', lang);
+}
+
 function renderTips(app, state, lang) {
   const intro = say(
     'Je advies van vandaag staat op Start en is gekozen op jouw eigen verbruik. Dit is de volledige lijst, op volgorde van wat het gemiddeld oplevert. Je kunt ze niet optellen: alles tegelijk doen levert niet de som op.',
     'Your recommendation for today is on Home, chosen from your own use. This is the full list, ordered by what it saves on average. They do not add up: doing everything at once does not save the total.', lang);
 
-  const items = rankedTips().map((t) => card(t[lang].title,
-    '<p class="tip-euro">' + euro(t.euroPerYear) + ' ' + say('per jaar', 'a year', lang) + '</p>'
+  const tips = rankedTips();
+  const adopted = tips.filter(tip => tipStatus(state, tip.id).status === 'adopted');
+  const dismissed = tips.filter(tip => tipStatus(state, tip.id).status === 'dismissed');
+  const finances = card(say('Grip op energiekosten', 'Financial Control', lang),
+    '<div data-annual-energy aria-live="polite">'
+    + (app.meterEnergy ? '<p class="note">'
+      + say('Jaarschatting berekenen…', 'Calculating annual estimate…', lang) + '</p>' : '')
+    + '</div>'
+    + '<h4>' + say('Mogelijke besparing per gebruikte tip', 'Potential annual savings per adopted tip', lang) + '</h4>'
+    + (adopted.length ? adopted.map(tip => statRow(tip[lang].title, euro(tip.euroPerYear))).join('')
+      : '<p class="note">' + say('Vink hieronder de tips aan die je gebruikt.', 'Select the tips you use below.', lang) + '</p>')
     + '<p class="note">' + say(
-        'Geschat voor een woning zoals die van jou. Wat jij bespaart hangt af van je eigen verbruik.',
-        'Estimated for a home like yours. What you save depends on your own use.', lang) + '</p>'
-    + '<p>' + t[lang].body + '</p>'
-    + '<p class="note">' + say('Gerekend met', 'Based on', lang) + ': ' + t[lang].basis + '</p>')).join('');
+      'De werkelijke besparing is niet gemeten. Tips kunnen elkaar overlappen.',
+      'Actual savings have not been measured. Tips can overlap.', lang)
+    + '</p>');
+
+  const items = tips.filter(tip => tipStatus(state, tip.id).status !== 'dismissed')
+    .map(t => card(t[lang].title,
+      '<p class="tip-euro">' + euro(t.euroPerYear) + ' ' + say('per jaar', 'a year', lang) + '</p>'
+      + '<p class="note">' + say(
+          'Geschat voor een woning zoals die van jou. Wat jij bespaart hangt af van je eigen verbruik.',
+          'Estimated for a home like yours. What you save depends on your own use.', lang) + '</p>'
+      + '<p>' + t[lang].body + '</p>'
+      + '<p class="note">' + say('Gerekend met', 'Based on', lang) + ': ' + t[lang].basis + '</p>'
+      + '<label class="consent-row"><input type="checkbox" data-adopt-tip="' + t.id + '"'
+      + (tipStatus(state, t.id).status === 'adopted' ? ' checked' : '') + '><span>'
+      + say('Ik gebruik deze tip', 'I’m using this tip', lang) + '</span></label>'
+      + (tipStatus(state, t.id).status === 'available' ? '<details><summary>'
+        + say('Tip verbergen', 'Dismiss tip', lang) + '</summary><div class="tip-dismiss-actions">'
+        + ['already_in_use', 'not_interested'].map(reason =>
+          '<button type="button" class="btn" data-tip-dismiss="' + t.id + '" data-reason="' + reason + '">'
+          + dismissedTipReason(reason, lang) + '</button>').join('') + '</div></details>' : ''))).join('');
+
+  const dismissedList = dismissed.length ? card('', '<details data-dismissed-tips><summary>'
+    + say('Verborgen tips', 'Dismissed tips', lang) + ' (' + dismissed.length + ')</summary>'
+    + dismissed.map(tip => statRow(tip[lang].title,
+      '<button type="button" class="btn" data-tip-restore="' + tip.id + '">'
+      + say('Herstellen', 'Restore', lang) + '</button>',
+      dismissedTipReason(tipStatus(state, tip.id).reason, lang))).join('') + '</details>') : '';
 
   // Tips history, per the brief: tapping the tip card on the dashboard has to
   // lead somewhere that shows which tip was given on which day.
@@ -3596,7 +3798,7 @@ function renderTips(app, state, lang) {
     '<li class="notice"><span class="notice-date">' + entry.date + '</span>'
     + '<span class="notice-body">' + entry.tip[lang].title + '</span></li>').join('');
 
-  return '<h2>Tips</h2><p class="note">' + intro + '</p>' + items
+  return '<h2>Tips</h2>' + finances + '<p class="note">' + intro + '</p>' + items + dismissedList
     + card(say('Wat je eerder kreeg', 'What you were shown before', lang),
         '<ul class="notices">' + history + '</ul>');
 }
@@ -3704,6 +3906,23 @@ function renderProfile(app, state, lang) {
 }
 
 // Household profile builder uses the same API base, cards and controls as Events.
+async function householdApi(path, options) {
+  const response = await fetch(EVT_API_BASE + path, options);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.detail === 'string' ? body.detail : 'HTTP ' + response.status);
+  }
+  return response.json();
+}
+// Gets the selected household's profile and yearly estimate for Financial Control.
+function buildMeterProfile(dataset, household, home = {}) {
+  return householdApi('/profiles/build', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dataset, household, home }),
+  });
+}
+
 function renderHouseholdBuilder(app, state, lang) {
   const label = (nl, en) => say(nl, en, lang);
   return '<h2>' + label('Huishoudprofiel bouwen', 'Build household profile') + '</h2>'
@@ -3716,54 +3935,75 @@ function renderHouseholdBuilder(app, state, lang) {
       + '<label class="evt-control">' + label('Oppervlakte (m²)', 'Floor area (m²)') + '<input id="hp-area" type="number" min="0.1" step="any"></label>'
       + '<label class="evt-control">' + label('Werktijden', 'Work schedule') + '<input id="hp-work" maxlength="200"></label>'
       + '<label class="evt-control">' + label('Slaaptijden', 'Sleep schedule') + '<input id="hp-sleep" maxlength="200"></label>'
-      + '</div></details><button class="btn" id="hp-build" disabled>' + label('Profiel bouwen', 'Build profile') + '</button></form>')
+      + '</div></details><button class="btn" id="hp-build" disabled>' + label('Profiel bouwen', 'Build profile') + '</button>'
+      + ' <button type="button" class="btn ghost" id="hp-tips" data-open="tips" disabled>'
+      + label('Bekijk in Tips', 'View in Tips') + '</button></form>')
     + '<p id="hp-status" class="evt-status" role="status" aria-live="polite"></p><div id="hp-result"></div>';
 }
 
-async function mountHouseholdBuilder(container, lang) {
+async function mountHouseholdBuilder(container, app, lang) {
   const label = (nl, en) => say(nl, en, lang);
   const find = (id) => container.querySelector('#hp-' + id);
   const status = find('status');
-  const api = async (path, options) => {
-    const response = await fetch(EVT_API_BASE + path, options);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(typeof body.detail === 'string' ? body.detail : 'HTTP ' + response.status);
+  const form = find('form');
+  const selectForTips = () => {
+    const dataset = find('dataset').value;
+    const household = find('household').value;
+    if (dataset && household && (app.meterEnergy?.dataset !== dataset || app.meterEnergy?.household !== household)) {
+      app.meterEnergy = { dataset, household, source: find('dataset').selectedOptions[0].text };
     }
-    return response.json();
   };
   const showError = (error) => { status.textContent = label('Kan niet laden: ', 'Unable to load: ') + error.message; status.classList.add('warn'); };
   const fmt = (v) => v == null ? '—' : new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(v);
   status.textContent = label('Datasets laden…', 'Loading datasets…');
   try {
-    const datasets = await api('/datasets');
-    if (!container.isConnected) return;
+    const datasets = await householdApi('/datasets');
+    if (!form.isConnected) return;
     find('dataset').innerHTML = datasets.filter(d => d.available).map(d => '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>').join('');
     const update = () => {
       const selected = datasets.find(d => d.id === find('dataset').value);
       find('household').innerHTML = (selected?.households || []).map(h => '<option value="' + escapeHtml(h) + '">' + escapeHtml(h) + '</option>').join('');
       find('household').disabled = !selected?.households.length;
       find('build').disabled = find('household').disabled;
+      find('tips').disabled = find('household').disabled;
       find('result').innerHTML = '';
     };
     find('dataset').disabled = !datasets.length;
-    find('dataset').addEventListener('change', update);
+    const changeSelection = () => {
+      selectForTips();
+      find('result').innerHTML = '';
+      status.classList.remove('warn');
+      status.textContent = label('Tips gebruikt het gekozen huishouden.', 'Tips uses the selected household.');
+    };
+    find('dataset').addEventListener('change', () => { update(); changeSelection(); });
+    find('household').addEventListener('change', changeSelection);
+    find('tips').addEventListener('click', selectForTips);
+    if (app.meterEnergy) find('dataset').value = app.meterEnergy.dataset;
     update();
+    if (app.meterEnergy && find('dataset').value === app.meterEnergy.dataset) {
+      find('household').value = app.meterEnergy.household;
+    }
     status.textContent = label('Kies gegevens en bouw een profiel.', 'Select data and build a profile.');
   } catch (error) { showError(error); }
-  find('form').addEventListener('submit', async (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    find('build').disabled = true;
+    selectForTips();
+    const meter = app.meterEnergy;
+    const controls = [find('build'), find('dataset'), find('household')];
+    controls.forEach(control => { control.disabled = true; });
     find('result').innerHTML = '';
     status.classList.remove('warn');
     status.textContent = label('Profiel berekenen…', 'Building profile…');
     try {
-      const result = await api('/profiles/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        dataset: find('dataset').value, household: find('household').value,
-        home: {energy_label: find('label').value || null, floor_area_m2: find('area').value ? Number(find('area').value) : null, work_schedule: find('work').value || null, sleep_schedule: find('sleep').value || null},
-
-      }) });
-      if (!container.isConnected) return;
+      const result = await buildMeterProfile(meter.dataset, meter.household, {
+        energy_label: find('label').value || null,
+        floor_area_m2: find('area').value ? Number(find('area').value) : null,
+        work_schedule: find('work').value || null,
+        sleep_schedule: find('sleep').value || null,
+      });
+      const estimate = result.profile.recent_annual_energy;
+      if (estimate) meter.estimate = estimate;
+      if (!form.isConnected) return;
       const p = result.profile;
       const weekday = (day) => new Intl.DateTimeFormat(lang, {weekday: 'short', timeZone: 'UTC'}).format(new Date(Date.UTC(2024, 0, 1 + day)));
       const html = card(escapeHtml(p.household_id),
@@ -3779,10 +4019,14 @@ async function mountHouseholdBuilder(container, lang) {
         + statRow(label('Slaaptijden', 'Sleep schedule'), escapeHtml(p.home.sleep_schedule || '—'))
         + '</details>')
         + '<p class="note">' + label('Dagtotalen: piekuren en nachtverbruik zijn niet beschikbaar.', 'Daily totals: peak hours and night usage are unavailable.') + '</p>';
-      find('result').innerHTML = html;
-      status.textContent = label('Profiel gebouwd.', 'Profile built.');
+      find('result').innerHTML = html + (estimate ? card(label('Jaarlijks energieverbruik', 'Annual energy usage'),
+        annualEnergyRows(estimate, lang) + '<p class="note">' + meterEstimateDetails(estimate, lang)
+        + '</p>') : '');
+      status.textContent = estimate
+        ? label('Profiel gebouwd. Tips gebruikt nu dit huishouden.', 'Profile built. Tips now uses this household.')
+        : label('Profiel gebouwd.', 'Profile built.');
     } catch (error) { showError(error); }
-    finally { if (container.isConnected) find('build').disabled = false; }
+    finally { controls.forEach(control => { control.disabled = false; }); }
   });
 }
 
@@ -4388,7 +4632,8 @@ function start(getApp, store) {
     bar.innerHTML = header(title, state.language);
     screen.innerHTML = tab.render(app, state, state.language) + footerNote(app, state.language);
     if (active === 'event-detection') mountEventDetection(screen);
-    if (active === 'household-builder') mountHouseholdBuilder(screen, state.language);
+    if (active === 'household-builder') mountHouseholdBuilder(screen, app, state.language);
+    if (active === 'tips') mountAnnualEnergy(screen, app, state, state.language);
     // Outside #screen, so the bar stays put while the content scrolls.
     tabs.innerHTML = tabBar(active, state.language);
     nav.innerHTML = infoOpen ? infoSheet(active, title, state.language) : '';
@@ -4421,15 +4666,45 @@ function start(getApp, store) {
     if (open) go(open);
   });
 
-  // Consent can be withdrawn from Profile at any time, and the app keeps
-  // working afterwards (handover Q10).
+  function setTipStatus(id, status) {
+    const state = store.get();
+    const tipStatuses = { ...state.tipStatuses };
+    if (status.status === 'available') delete tipStatuses[id];
+    else tipStatuses[id] = status;
+    store.set({ ...state, tipStatuses });
+  }
+
   screen.addEventListener('change', (event) => {
+    const tipId = event.target.dataset?.adoptTip;
+    if (tipId) {
+      setTipStatus(tipId, event.target.checked
+        ? { status: 'adopted', adoptedOn: DEMO_TODAY }
+        : { status: 'available' });
+      screen.querySelector('[data-adopt-tip="' + tipId + '"]')?.focus({ preventScroll: true });
+      return;
+    }
+    // Consent can be withdrawn from Profile at any time.
     const key = event.target.dataset?.consent;
     if (!key) return;
     store.set(setConsent(store.get(), key, event.target.checked));
   });
 
   screen.addEventListener('click', (event) => {
+    const dismiss = event.target.closest('[data-tip-dismiss]');
+    if (dismiss) {
+      setTipStatus(dismiss.dataset.tipDismiss, { status: 'dismissed', reason: dismiss.dataset.reason });
+      const list = screen.querySelector('[data-dismissed-tips]');
+      if (list) list.open = true;
+      list?.querySelector('[data-tip-restore="' + dismiss.dataset.tipDismiss + '"]')?.focus();
+      return;
+    }
+    const restore = event.target.closest('[data-tip-restore]');
+    if (restore) {
+      setTipStatus(restore.dataset.tipRestore, { status: 'available' });
+      screen.querySelector('[data-adopt-tip="' + restore.dataset.tipRestore + '"]')?.focus();
+      return;
+    }
+
     const lang = event.target.closest('[data-lang]')?.dataset.lang;
     if (lang) { store.set({ ...store.get(), language: lang }); return; }
 
